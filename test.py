@@ -1,4 +1,18 @@
-import finnhub
-finnhub_client = finnhub.Client(api_key="d30e8phr01qnmrse5pm0d30e8phr01qnmrse5pmg")
+import requests
+import os
+from dotenv import load_dotenv
+import json
 
-print(finnhub_client.stock_symbols('US'))
+load_dotenv()
+
+API_KEY = os.getenv("NEWS_API_KEY")
+params = {
+    "apiKey": API_KEY,
+    "language": "en",
+    "country": "us"
+}
+
+response = requests.get("https://newsapi.org/v2/top-headlines/sources", params=params)
+response = response.json()
+print(json.dumps(response, indent=2))
+
