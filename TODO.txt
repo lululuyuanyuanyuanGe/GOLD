@@ -1,3 +1,9 @@
 1.get IBKR api
 2.RRS feed on newswirs
 3.RAG
+
+strategy1: network sniff, directly catch the websocket package
+strategy2: browser automation by playwright to monitor the DOM changes
+strategy3: Direct javascript injection, 
+
+Directly use the news from IBKR, since they provde news from benzinga and reuture
