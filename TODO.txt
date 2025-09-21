@@ -7,3 +7,5 @@ strategy2: browser automation by playwright to monitor the DOM changes
 strategy3: Direct javascript injection, 
 
 Directly use the news from IBKR, since they provde news from benzinga and reuture
+
+Or use moomoo's api try it tomorrow
