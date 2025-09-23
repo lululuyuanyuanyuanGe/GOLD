@@ -9,3 +9,8 @@ strategy3: Direct javascript injection,
 Directly use the news from IBKR, since they provde news from benzinga and reuture
 
 Or use moomoo's api try it tomorrow
+
+
+1.我们的目标
+2.总结跑的结果，
+3. https://arxiv.org/pdf/2506.22242
