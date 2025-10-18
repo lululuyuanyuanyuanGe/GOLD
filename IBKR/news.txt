@@ -1,0 +1,19 @@
+Starting new session...
+Connecting to IBKR Gateway...
+Connection successful. Next valid ID: 1
+Available news providers: ['BRFG', 'BRFUPDN', 'DJ-N', 'DJ-RTA', 'DJ-RTE', 'DJ-RTG', 'DJ-RTPRO', 'DJNL', 'FLY']
+
+=== Subscribing to BroadTape News Feeds ===
+Subscribing to BRFG BroadTape...
+Subscribing to DJNL BroadTape...
+
+Listening for general market news...
+NOTE: News only flows during market hours (Mon-Fri)
+Press Ctrl+C to stop
+
+ERROR 2103: Market data farm connection is broken:hfarm
+ERROR 1100: Connectivity between IBKR and Trader Workstation has been lost.
+ERROR 1102: Connectivity between IBKR and Trader Workstation has been restored - data maintained. The following farms are connected: hfarm. The following farms are not connected: apachmds; secdefhk.
+
+Stopping...
+Disconnected.
