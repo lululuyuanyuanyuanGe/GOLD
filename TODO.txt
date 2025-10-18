@@ -17,3 +17,5 @@ Or use moomoo's api try it tomorrow
 
 
 Implement the job agent
+
+strict year month day format
