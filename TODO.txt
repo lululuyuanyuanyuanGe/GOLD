@@ -19,3 +19,5 @@ Or use moomoo's api try it tomorrow
 Implement the job agent
 
 strict year month day format
+
+wait for the IBKR to approve the non professional account changes

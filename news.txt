@@ -11,3 +11,7 @@ Listening for general market news...
 NOTE: News only flows during market hours (Mon-Fri)
 Press Ctrl+C to stop
 
+ERROR 2103: Market data farm connection is broken:hfarm
+
+Stopping...
+Disconnected.
