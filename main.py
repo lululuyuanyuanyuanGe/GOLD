@@ -5,7 +5,7 @@ from ibapi.ticktype import TickTypeEnum
 import threading
 import time
 
-LOG_FILE = "news.txt"
+LOG_FILE = "D:\\proejects\\Gold\\news"
 
 
 def log_message(message):
@@ -109,6 +109,7 @@ class IBApp(EWrapper, EClient):
         # Request 5-second bars
         self.reqRealTimeBars(bar_req_id, contract, 5, "TRADES", True, [])
         log_message(f"Subscribed to 5-sec bars for {symbol} with ID {bar_req_id}")
+
 def main():
     with open(LOG_FILE, "w") as f:
         f.write("Starting new session...\n")
