@@ -2,10 +2,10 @@ Starting new session...
 Connecting to IBKR Gateway...
 Connection successful. Next valid ID: 1
 
-=== Subscribing to Market Data for AAPL ===
-Subscribed to price data for AAPL with ID 2001
-Subscribed to 5-sec bars for AAPL with ID 2002
-ERROR 420: Invalid Real-time Query:No market data permissions for ISLAND STK. Requested market data requires additional subscription for API. See link in 'Market Data Connections' dialog for more details.
+=== Subscribing to Market Data for IONQ ===
+Subscribed to price data for IONQ with ID 2001
+Subscribed to 5-sec bars for IONQ with ID 2002
+ERROR 420: Invalid Real-time Query:No market data permissions for NYSE STK. Requested market data requires additional subscription for API. See link in 'Market Data Connections' dialog for more details.
 Available news providers: ['BRFG', 'BRFUPDN', 'DJ-N', 'DJ-RT', 'DJ-RTA', 'DJ-RTE', 'DJ-RTG', 'DJNL', 'FLY']
 
 === Subscribing to BroadTape News Feeds ===

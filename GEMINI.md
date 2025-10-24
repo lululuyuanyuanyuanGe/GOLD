@@ -63,6 +63,7 @@ python test.py
 *   **Asynchronous Operations:** The use of threading in `IBKR/main.py` allows for non-blocking communication with the IBKR API, which is essential for real-time data processing.
 *   **Modern Python:** The use of `pyproject.toml` for dependency management aligns with modern Python packaging standards.
 *   **API Abstraction:** The `BenzingaPressReleases` class in `test.py` demonstrates a good practice of abstracting API interactions into reusable classes.
+*   **Function Call Convention:** When making function calls, use the `parameter_name = actual_arguments` convention.
 
 # Future Development
 
