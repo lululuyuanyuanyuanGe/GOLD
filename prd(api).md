@@ -1,9 +1,3 @@
-Of course. Understood. We will revert the architecture to the more robust and streamlined single-platform approach, using Interactive Brokers for all functions.
-
-Here is the complete, updated Product Requirements Document for the project, reflecting the use of IBKR as the sole API for news, market data, and trade execution.
-
----
-
 ### **Product Requirements Document: "Momentum API" Real-Time News Trading Bot**
 
 ### **1. Introduction & Vision**

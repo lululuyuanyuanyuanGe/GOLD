@@ -1,7 +1,3 @@
-Of course. This document provides the complete technical blueprint for the final, streamlined architecture using Interactive Brokers as the single source for all API interactions.
-
----
-
 ### **Technical Design & Architecture: "Momentum API" Trading Bot (IBKR Single-API)**
 
 **1. Guiding Principles & Philosophy**
