@@ -91,47 +91,78 @@ class IBKRConnector:
             self.reconnect_task.cancel()
             self.reconnect_task = None
 
-    # Placeholder methods for other functionalities
-    async def subscribe_to_news(self, symbols: list, news_providers_config: list):
-        logging.info(f"Subscribing to news for symbols: {symbols} with providers: {news_providers_config}")
+    async def subscribe_to_news_providers_test(self, news_providers_config: list):
+        logging.info(f"Attempting to subscribe to news feeds for providers: {news_providers_config}")
         if not self.ib.isConnected():
             logging.warning("IBKR not connected, cannot subscribe to news.")
             return
 
         try:
-            async def get_news_providers(news_providers: list):
-                active_provider_codes = []
+            for provider_code in ["BRFG", "BRFUPDN", "DJNL"]:  # Start with free providers
+                news_contract = Contract(
+                    secType='NEWS', 
+                    exchange=provider_code, 
+                    symbol=f'{provider_code}:{provider_code}_ALL'  # Key fix: add colon
+                )
                 
-                # Filter for configured news providers
-                active_provider_codes = []
-                for config_provider_name in news_providers_config:
-                    for ib_provider in ib_news_providers:
-                        if ib_provider.providerName.upper() == config_provider_name.upper():
-                            active_provider_codes.append(ib_provider.providerCode)
-                            break
-                
-                if not active_provider_codes:
-                    logging.warning(f"No active news providers found for configured: {news_providers_config}. Skipping news subscription.")
-                    return
+                self.ib.reqMktData(
+                    contract=news_contract,
+                    genericTickList='292',
+                    snapshot=False,
+                    regulatorySnapshot=False
+                )
 
-                # Construct genericTickList for news subscription
-                # Format: +[providerCode], e.g., '+BZ'
-                generic_tick_list = ''.join([f'+{code}' for code in active_provider_codes])
-                logging.info(f"Using genericTickList for news: {generic_tick_list}")
+                logging.info(f"Subscription request sent for {provider_code} news feed. Waiting for articles...")
 
-                for symbol in symbols:
-                    contract = Contract(symbol=symbol, secType='STK', exchange='SMART', currency='USD')
-                    # Requesting market data with generic ticks for news providers
-                    self.ib.reqMktData(contract, generic_tick_list, False, False)
-                    logging.info(f"Requested market data for news from {generic_tick_list} for {symbol}")
+        except Exception as e:
+            logging.error(f"Failed to subscribe to news: {e}")
 
-            if news_providers_config:
-                await get_news_providers(news_providers_config)
-            else:
-                # Get available news providers from IBKR
-                ib_news_providers = await self.ib.reqNewsProvidersAsync()
-                await get_news_providers(ib_news_providers)
-                
+
+    async def subscribe_to_news_providers(self, news_providers_config: list):
+        logging.info(f"Attempting to subscribe to news feeds for providers: {news_providers_config}")
+        if not self.ib.isConnected():
+            logging.warning("IBKR not connected, cannot subscribe to news.")
+            return
+
+        try:
+            # Get all available news providers from IBKR
+            available_ib_news_providers = await self.ib.reqNewsProvidersAsync()
+
+            # Determine which providers to use
+            target_provider_names = [p.upper() for p in news_providers_config] if news_providers_config else []
+
+            active_provider_codes = []
+            active_provider_names_for_logging = [] # New list for logging names
+            for ib_provider in available_ib_news_providers:
+                if not target_provider_names or ib_provider.name.upper() in target_provider_names:
+                    active_provider_codes.append(ib_provider.code)
+                active_provider_names_for_logging.append(ib_provider.name) # Add name for logging
+
+            logging.info(f"Successfully activated news providers: {active_provider_names_for_logging}") # Log the names
+
+            if not active_provider_codes:
+                logging.warning(f"No active news providers found for configured: {news_providers_config}. Skipping news subscription.")
+                # return
+
+            # Construct genericTickList for news subscription
+            generic_tick_list = ''.join([f'+{code}' for code in active_provider_codes])
+
+            for provider_code in ["DJ", "DZN", "BRFG", "BZ"]:  #active_provider_codes:
+                # Create a special contract for the news feed.
+                # The exchange is the providerCode and the symbol defines the specific feed (e.g., BZ_ALL).
+                news_contract = Contract(secType='NEWS', exchange=provider_code, symbol=f'{provider_code}')
+
+                # Make the market data request to start the news stream.
+                # genericTickList='292' is required for news data.
+                # snapshot=False is crucial to get a continuous real-time stream.
+                self.ib.reqMktData(
+                    contract=news_contract,
+                    genericTickList='292',
+                    snapshot=False,
+                    regulatorySnapshot=False
+                )
+                logging.info(f"Subscription request sent for {provider_code} news feed. Waiting for articles...")
+
         except Exception as e:
             logging.error(f"Failed to subscribe to news: {e}")
 
@@ -163,7 +194,7 @@ class IBKRConnector:
             return None
         try:
             # Ensure the contract is qualified
-            qualified_contract = (await self.ib.qualifyContracts(contract))[0]
+            qualified_contract = (self.ib.qualifyContracts(contract))[0]
             self.ib.reqMktData(qualified_contract) # Start streaming market data
             # The Ticker object is updated in place by ib_insync
             # We can retrieve it immediately, but its values will be updated asynchronously
@@ -179,7 +210,7 @@ class IBKRConnector:
             logging.warning("IBKR not connected, cannot place order.")
             return None
         try:
-            trade = await self.ib.placeOrder(contract, order)
+            trade = self.ib.placeOrder(contract, order)
             logging.info(f"Order placed: {trade}")
             return trade
         except Exception as e:

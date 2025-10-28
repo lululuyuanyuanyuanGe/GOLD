@@ -36,7 +36,7 @@ async def main():
             "url": f"sqlite:///{os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'data', 'trades.db'))}"
         },
         "news": {
-            "providers": ['BENZINGA'], # Example: Add other providers as needed
+            "providers": ['BZ'], # Example: Add other providers as needed
             "symbols": ['SPY', 'QQQ'] # Symbols to subscribe to news for
         }
     }
@@ -74,7 +74,7 @@ async def main():
     await ibkr_connector.connect_async()
     await news_handler.start()
     # Subscribe to news after connector is operational
-    await ibkr_connector.subscribe_to_news(config["news"]["symbols"], config["news"]["providers"])
+    await ibkr_connector.subscribe_to_news_providers_test(config["news"]["providers"])
     await detection_engine.start()
     await execution_service.start()
     await position_manager.start(interval=config["position_manager"]["monitor_interval"])
