@@ -55,15 +55,65 @@ class IBApp(EWrapper, EClient):
         )
         log_message(news_output)
 
-    def historicalNews(self, reqId: int, time: str, providerCode: str, articleId: str, headline: str):
-        if reqId not in self.historical_news:
-            self.historical_news[reqId] = []
-        self.historical_news[reqId].append({
-            "time": time,
-            "providerCode": providerCode,
-            "articleId": articleId,
-            "headline": headline
-        })
+    def historicalNewsEnd(self, reqId: int, hasMore: bool):
+        log_message(f"Historical news for reqId {reqId} finished. Has more: {hasMore}")
+        # You can process self.historical_news[reqId] here or when needed.
+
+    def contractDetails(self, reqId: int, contractDetails):
+        log_message(f"Received contract details for reqId {reqId}: {contractDetails.contract.conId}")
+        self.contract_details[reqId] = contractDetails.contract
+
+        if reqId in self.pending_news_requests:
+            news_request_info = self.pending_news_requests.pop(reqId)
+            symbol = news_request_info["symbol"]
+            providers = news_request_info["providers"]
+            num_articles = news_request_info["num_articles"]
+            conId = contractDetails.contract.conId
+
+            historical_news_req_id = self.next_req_id()
+            self.historical_news[historical_news_req_id] = [] # Initialize for historical news
+            
+            self.reqHistoricalNews(
+                reqId=historical_news_req_id,
+                conId=conId,
+                providerCodes=providers,
+                startDateTime="",
+                endDateTime="",
+                totalResults=num_articles,
+                historicalNewsOptions=[]
+            )
+            log_message(f"Requested {num_articles} latest news articles for {symbol} (ConId: {conId}) with ID {historical_news_req_id}")
+        else:
+            log_message(f"Received contract details for unknown or completed news request ID: {reqId}")
+
+    def contractDetailsEnd(self, reqId: int):
+        log_message(f"Contract details request {reqId} finished.")
+        if reqId in self.pending_news_requests:
+            news_request_info = self.pending_news_requests.pop(reqId)
+            log_message(f"No contract details found for symbol: {news_request_info['symbol']}. Cannot fetch historical news.")
+
+    def print_historical_news(self, req_id: int):
+        log_message("\n=== PRINTING HISTORICAL NEWS ===")
+        if req_id is not None:
+            if req_id in self.historical_news and self.historical_news[req_id]:
+                log_message(f"--- News for Request ID: {req_id} ---")
+                for article in self.historical_news[req_id]:
+                    log_message(f"  Time: {article['time']}\n  Provider: {article['providerCode']}\n  Headline: {article['headline']}")
+                log_message("----------------------------\n")
+            else:
+                log_message(f"No historical news found for request ID: {req_id}")
+        else:
+            if not self.historical_news:
+                log_message("No historical news available.")
+                return
+
+            for current_req_id, news_list in self.historical_news.items():
+                if news_list:
+                    log_message(f"--- News for Request ID: {current_req_id} ---")
+                    for article in news_list:
+                        log_message(f"  Time: {article['time']}\n  Provider: {article['providerCode']}\n  Headline: {article['headline']}")
+                    log_message("----------------------------\n")
+        log_message("=== END OF HISTORICAL NEWS ===")
 
     # --- Market Data Callbacks ---
     def tickPrice(self, reqId, tickType, price, attrib):
@@ -105,55 +155,36 @@ class IBApp(EWrapper, EClient):
         self.reqMktData(req_id, contract, "", False, False, [])
         return req_id
 
-    def get_latest_news(self, symbol: str, providers: str = "BRFG+DJNL", num_articles: int = 10):
+    def get_latest_news(self, symbol: str, providers: str = "BRFG+DJNL", num_articles: int = 10) -> int:
         """
         Request a specific number of the latest news articles for a stock.
+        This method first requests contract details to obtain the conId,
+        then uses the conId to request historical news.
 
         :param symbol: The stock symbol (e.g., "AAPL").
         :param providers: Provider codes (e.g., "BRFG+DJNL"). Defaults to free providers.
         :param num_articles: The number of articles to fetch.
+        :return: The request ID for the contract details request.
         """
-        log_message(f"\n=== Requesting {num_articles} Latest News for {symbol} from providers: '{providers}' ===")
+        contract_req_id = self.next_req_id()
+        log_message(f"\n=== Initiating Contract Details Request (ID: {contract_req_id}) for {symbol} to fetch {num_articles} Latest News from providers: '{providers or 'ALL'}' ===")
         
-        # Step 1: Create a stock contract (NOT a NEWS contract)
-        contract = Contract()
-        contract.symbol = symbol
-        contract.secType = "STK"          # ← CHANGED: Must be "STK" for stocks, not "NEWS"
-        contract.exchange = "SMART"
-        contract.currency = "USD"
-        
-        # Step 2: Request contract details to get the conId
-        detail_req_id = 8000 + len(self.contract_details)
-        self.reqContractDetails(detail_req_id, contract)
-        
-        log_message(f"Requesting contract details for {symbol}...")
-        time.sleep(2)  # Wait for contractDetails callback
-        
-        # Step 3: Check if we got the contract details
-        if detail_req_id not in self.contract_details:
-            log_message(f"ERROR: Could not retrieve contract details for {symbol}")
-            return None
-        
-        # Step 4: Extract the conId from the stored contract
-        conId = self.contract_details[detail_req_id].conId
-        log_message(f"Got conId {conId} for {symbol}")
-        
-        # Step 5: Request historical news with CORRECT syntax
-        query_id = detail_req_id + 1000
-        self.historical_news[query_id] = []  # Initialize storage for this request
-        
-        self.reqHistoricalNews(
-            query_id,         # reqId (int) - unique identifier
-            conId,            # conId (int) - the contract ID we just retrieved
-            providers,        # providerCodes (str) - e.g., "BRFG+DJNL"
-            "",               # startDateTime (str) - empty for default lookback
-            "",               # endDateTime (str) - empty for now
-            num_articles,     # totalResults (int) - number of articles
-            []                # historicalNewsOptions (list) - always []
-        )
-        
-        log_message(f"Requested {num_articles} latest news articles for {symbol} with ID {query_id}")
-        return query_id
+        self.pending_news_requests[contract_req_id] = {
+            "symbol": symbol,
+            "providers": providers,
+            "num_articles": num_articles
+        }
+
+        # Define the contract for contract details request
+        news_contract = Contract()
+        news_contract.symbol = symbol
+        news_contract.secType = "STK" # Assuming stock for news, adjust if other secTypes are needed
+        news_contract.exchange = "SMART"
+        news_contract.currency = "USD"
+
+        self.reqContractDetails(reqId=contract_req_id, contract=news_contract)
+        log_message(f"Requested contract details for {symbol} with request ID {contract_req_id}")
+        return contract_req_id # This ID is for contract details, not historical news yet.
 
     def subscribe_to_market_data(self, symbol):
         log_message(f"\n=== Subscribing to Market Data for {symbol} ===")
@@ -210,13 +241,10 @@ def main():
         time.sleep(1)
 
         # --- Fetch Latest News for a Stock ---
-        aapl_news_req_id = app.get_latest_news("AAPL")
-        time.sleep(5) # Give some time for news to arrive
-        if aapl_news_req_id in app.historical_news:
-            log_message(f"\n--- LATEST NEWS FOR AAPL ---")
-            for article in app.historical_news[aapl_news_req_id]:
-                log_message(f"  Time: {article["time"]}\n  Provider: {article["providerCode"]}\n  Headline: {article["headline"]}")
-            log_message("----------------------------\n")
+        app.get_latest_news(symbol="AAPL", num_articles=20) # Request 20 articles for AAPL
+        time.sleep(10) # Give more time for contract resolution and news to arrive
+
+        app.print_historical_news()
 
         log_message("\nListening for data... Press Ctrl+C to stop\n")
         
