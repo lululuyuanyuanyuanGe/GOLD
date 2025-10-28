@@ -1,30 +1,74 @@
-### **Prompt for AI Coding Agent: Implementation of the 'Momentum API' Trading Bot**
+# Project Overview
 
-**Role:** You are an expert Python software engineer specializing in building high-performance, asynchronous financial applications. Your code should be clean, robust, modular, and production-ready.
+This project is a Python-based financial data and trading platform that leverages the Interactive Brokers (IBKR) API. It is designed to be a comprehensive tool for traders and analysts, providing real-time and historical news, market data, and the foundation for automated trading strategies.
 
-**Primary Objective:** Your task is to implement the complete, end-to-end source code for the "Momentum API" algorithmic trading bot. You will be provided with two critical documents that you **MUST** use as the single source of truth for this implementation: the **Product Requirements Document (PRD)** and the **Technical Design & Architecture Document (TSD)**.
+The application connects to the IBKR Trader Workstation (TWS) or Gateway to access a wide range of financial data and services. The core of the project is the `IBKR/main.py` script, which establishes the connection and manages the data streams.
 
-Think of the PRD as the **"what"** (what the system does) and the TSD as the **"how"** (how the system is built). Your implementation must perfectly reflect both.
+## Key Features
 
----
+*   **Real-time News:** Subscribes to real-time news feeds for specified stock symbols.
+*   **Historical News:** Fetches historical news articles for in-depth analysis.
+*   **Contract Details:** Retrieves contract information for various financial instruments.
+*   **Extensible Architecture:** The `IBApp` class is designed to be extended with more functionality, such as order placement, account management, and real-time market data.
+*   **Multi-source Data:** While the primary focus is on IBKR, the project also includes modules for fetching data from other sources like Benzinga.
 
-### **Core Instructions:**
+## Architecture
 
-1.  **Strict Adherence to Documents:** You must strictly adhere to the architecture, modules, technology stack, data flow, and logic defined in the TSD and PRD. Do not introduce new libraries, change the core architectural patterns (e.g., the producer-consumer model), or deviate from the specified algorithms.
-2.  **Asynchronous Implementation:** The entire application must be built on Python's `asyncio` library. All I/O-bound operations (API calls, waiting for events) must use `async/await` syntax to be non-blocking.
-3.  **Project Structure:** Generate the complete source code for the project, presenting it in a file-by-file format that exactly matches the directory structure specified in the TSD.
-4.  **Code Quality & Best Practices:**
-    *   **PEP 8:** All code must be formatted according to PEP 8 standards.
-    *   **Type Hinting:** Use modern Python type hints for all function signatures, variables, and class members.
-    *   **Modularity:** Encapsulate all logic within the specific modules defined in the TSD (`IBKRConnector`, `NewsHandler`, `DetectionEngine`, etc.). Do not mix responsibilities.
-    *   **Configuration:** All parameters (API settings, strategy variables, file paths) must be loaded from a central `config.yaml` file. **Do not hardcode any values in the Python source code.**
-    *   **Logging:** Implement structured logging throughout the application. Log important events such as connections, disconnections, news received, signals generated, orders placed, and errors.
-    *   **Error Handling:** Include robust `try...except` blocks for all network operations and external API calls.
-5.  **Placeholders:** Use placeholder values for sensitive information in the `config.yaml` file (e.g., `YOUR_ACCOUNT_ID`, `YOUR_HOST`, `YOUR_PORT`).
-6.  **Completeness:** Generate the content for **all** necessary project files, including:
-    *   All Python source files (`.py`).
-    *   The `config.yaml` template.
-    *   The `pyproject.toml` file, specifying all dependencies mentioned in the TSD (`ib_insync`, `pandas`, `numpy`, `pyyaml`, `poetry`).
-    *   A basic `.gitignore` file suitable for a Python project.
-    *   A `README.md` that briefly describes the project and how to run it.
-7.  **Focus on Implementation:** Do not provide explanations of the code in your response unless they are comments within the code itself. The goal is the final, ready-to-use codebase.
+The project is centered around the `IBApp` class in `IBKR/main.py`, which inherits from the `EWrapper` and `EClient` classes of the `ibapi` library. This class handles the communication with the IBKR TWS/Gateway and processes the incoming data.
+
+*   `IBKR/main.py`: The main application logic, including the `IBApp` class and the main execution loop.
+*   `main.py`: A supplementary script for fetching news from the Benzinga API.
+*   `test.py`: An exploratory script that demonstrates a more structured way to fetch data from Benzinga.
+*   `pyproject.toml`: Defines the project dependencies and metadata.
+
+# Building and Running
+
+There are no explicit build steps. To run the project, you need to have Python and the dependencies installed.
+
+**1. Install Dependencies:**
+
+```bash
+pip install -r requirements.txt 
+# or, if you are using uv 
+uv pip install -r requirements.txt
+```
+*(Note: a `requirements.txt` file can be generated from `pyproject.toml`)*
+
+
+**2. Run the Interactive Brokers script:**
+
+Before running the IBKR script, you must have the Interactive Brokers Trader Workstation (TWS) or Gateway running and configured to accept API connections.
+
+```bash
+python IBKR/main.py
+```
+
+**3. Run the supplementary scripts:**
+
+```bash
+python main.py
+python test.py
+```
+
+# Development Conventions
+
+*   **Modular Design:** The project is structured with a clear separation of concerns, with the core IBKR logic isolated in its own module.
+*   **Asynchronous Operations:** The use of threading in `IBKR/main.py` allows for non-blocking communication with the IBKR API, which is essential for real-time data processing.
+*   **Modern Python:** The use of `pyproject.toml` for dependency management aligns with modern Python packaging standards.
+*   **API Abstraction:** The `BenzingaPressReleases` class in `test.py` demonstrates a good practice of abstracting API interactions into reusable classes.
+*   **Function Call Convention:** When making function calls, use the `parameter_name = actual_arguments` convention.
+
+# Future Development
+
+The project has a solid foundation that can be extended in many ways:
+
+*   **Order Management:** Implement functionality to place, modify, and cancel orders through the IBKR API.
+*   **Real-time Market Data:** Subscribe to real-time market data streams for stocks, options, and other instruments.
+*   **Trading Strategy Implementation:** Build and integrate automated trading strategies that react to news and market data.
+*   **Database Integration:** Store the collected data in a database for more robust analysis and backtesting.
+*   **GUI or Web Interface:** Create a user interface to visualize the data and manage the trading strategies.
+
+# Agent Rules
+
+*   **Search Tool Usage:** Use the `google_web_search` tool to search for API usage, limitations, or any other information needed during development.
+*   **Documentation Reference:** When needed, reference `prd(api).md`, `tss.md`, and `development_progress.md` for project requirements, technical design, and development progress.
