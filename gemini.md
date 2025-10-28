@@ -1,74 +1,104 @@
-# Project Overview
+# Project Overview: "Momentum API" Real-Time News Trading Bot
 
-This project is a Python-based financial data and trading platform that leverages the Interactive Brokers (IBKR) API. It is designed to be a comprehensive tool for traders and analysts, providing real-time and historical news, market data, and the foundation for automated trading strategies.
+This project is an asynchronous Python-based financial data and trading platform that leverages the Interactive Brokers (IBKR) API. It is designed to be a high-speed, automated trading system that systematically captures initial price movements driven by significant news events.
 
-The application connects to the IBKR Trader Workstation (TWS) or Gateway to access a wide range of financial data and services. The core of the project is the `IBKR/main.py` script, which establishes the connection and manages the data streams.
+## 1. Introduction & Vision (from prd(api).md)
 
-## Key Features
+**1.1. The Problem:** Financial markets price in new information with extreme velocity. Manually trading on breaking news is impossible due to the speed required to ingest, analyze, and act. An automated solution is required to systematically capture the initial price movement driven by significant news events.
 
-*   **Real-time News:** Subscribes to real-time news feeds for specified stock symbols.
-*   **Historical News:** Fetches historical news articles for in-depth analysis.
-*   **Contract Details:** Retrieves contract information for various financial instruments.
-*   **Extensible Architecture:** The `IBApp` class is designed to be extended with more functionality, such as order placement, account management, and real-time market data.
-*   **Multi-source Data:** While the primary focus is on IBKR, the project also includes modules for fetching data from other sources like Benzinga.
+**1.2. The Vision:** To create a high-speed, automated trading system that connects directly to a low-latency news feed via the **Interactive Brokers (IBKR) API**. The system will programmatically identify news tied to a specific stock, analyze its market data for a reaction, execute a trade in the direction of the momentum, and manage the position based on a strict set of rules, all within the IBKR ecosystem.
 
-## Architecture
+**1.3. Core Workflow:**
+1.  Establish a persistent, resilient connection to the **IBKR API**.
+2.  Subscribe to a real-time, machine-readable news feed (e.g., Benzinga) through the **IBKR API**.
+3.  Instantly parse incoming structured news data to extract the stock ticker.
+4.  Upon receiving a ticker, analyze live market data, also from the **IBKR API**, for a qualifying price/volume "shock."
+5.  Execute a market order to enter a position and apply a predefined risk management strategy to exit, all via the **IBKR API**.
 
-The project is centered around the `IBApp` class in `IBKR/main.py`, which inherits from the `EWrapper` and `EClient` classes of the `ibapi` library. This class handles the communication with the IBKR TWS/Gateway and processes the incoming data.
+## 2. Key Features (from prd(api).md)
 
-*   `IBKR/main.py`: The main application logic, including the `IBApp` class and the main execution loop.
-*   `main.py`: A supplementary script for fetching news from the Benzinga API.
-*   `test.py`: An exploratory script that demonstrates a more structured way to fetch data from Benzinga.
-*   `pyproject.toml`: Defines the project dependencies and metadata.
+The system is modular, with distinct components for connection management, news processing, event detection, trade execution, and position management.
 
-# Building and Running
+*   **IBKR Gateway Connection:** Securely manages and utilizes IBKR API credentials, implements a robust state machine, and handles automatic reconnection with exponential backoff.
+*   **Real-Time News Ingestion & Parsing:** Subscribes to designated news feeds via the IBKR API, parses structured news data (XML) to extract ticker symbols, and efficiently filters news items.
+*   **Event Detection & Qualification Engine:** Receives tickers from news alerts, requests real-time market data from IBKR, and applies a configurable "Shock Detection Algorithm" to qualify tradeable events.
+*   **Trade Execution & Position Sizing:** Places market orders with calculated share sizes based on trade signals, confirms order acceptance, and implements gating logic to ensure operational connection status.
+*   **Position & Risk Management:** Monitors open positions using real-time IBKR market data, calculates P&L, and implements exit rules (Take-Profit, Stop-Loss, Max Time in Trade).
 
-There are no explicit build steps. To run the project, you need to have Python and the dependencies installed.
+## 3. Core Technology Stack (from tss.md)
+
+*   **Programming Language:** **Python 3.10+** (with `asyncio` for concurrency)
+*   **IBKR API Connectivity:** **ib_insync Library** (high-level, async-native interface)
+*   **Data Analysis & Indicators:** **NumPy & Pandas** (for numerical operations and time-series data)
+*   **Data Persistence (Trade Records):** **SQLite** (serverless, file-based SQL database via SQLAlchemy)
+*   **Configuration:** **YAML (`PyYAML` library)** (for human-readable configuration)
+*   **Environment Management:** **Poetry** (for reproducible builds and dependency isolation)
+
+## 4. System Architecture & Data Flow (from tss.md)
+
+The application operates as a single, long-running asynchronous process. Communication flows through a central `IBKRConnector`, with news processing decoupled via an `asyncio.Queue`.
+
+```
+IBKR API <--> [IBKR Connector] <--> [News Handler (Producer)] -> [Asyncio Queue]
+    ^                   |                                              |
+    | (Data Req/Resp)   | (Order Flow)                                 v
+    |                   v                                              |
+    `[Execution Svc]` <- `[Worker Pool (Consumers)]` -> `[Position Mgr]`
+```
+
+## 5. Building and Running
+
+To run the project, you need to have Python 3.10+ and the dependencies installed.
 
 **1. Install Dependencies:**
 
 ```bash
-pip install -r requirements.txt 
-# or, if you are using uv 
-uv pip install -r requirements.txt
+uv pip install -e .
 ```
-*(Note: a `requirements.txt` file can be generated from `pyproject.toml`)*
 
+**2. Run the Application:**
 
-**2. Run the Interactive Brokers script:**
+Before running, ensure the Interactive Brokers Trader Workstation (TWS) or Gateway is running and configured to accept API connections.
 
-Before running the IBKR script, you must have the Interactive Brokers Trader Workstation (TWS) or Gateway running and configured to accept API connections.
+From the project root (`D:\proejects\Gold`), execute:
 
 ```bash
-python IBKR/main.py
+D:\proejects\Gold\.venv\Scripts\python.exe -m momentum_api_bot.momentum_bot.main
 ```
+*(Note: The `main.py` includes a `sys.path` modification to ensure `momentum_bot` is discoverable.)*
 
-**3. Run the supplementary scripts:**
+## 6. Development Conventions (from tss.md)
 
-```bash
-python main.py
-python test.py
-```
+*   **Asynchronous-First:** Core built on Python's `asyncio` event loop.
+*   **Event-Driven & Decoupled:** Producer-consumer pattern for modules.
+*   **Stateful & Resilient:** `IBKRConnector` manages connection lifecycle and recovery.
+*   **Fail-Safe by Design:** Gating logic prevents orders unless IBKR is `OPERATIONAL`.
+*   **Modularity & Testability:** Clear separation of concerns for independent development.
 
-# Development Conventions
+## 7. Development Progress (from development_progress.md)
 
-*   **Modular Design:** The project is structured with a clear separation of concerns, with the core IBKR logic isolated in its own module.
-*   **Asynchronous Operations:** The use of threading in `IBKR/main.py` allows for non-blocking communication with the IBKR API, which is essential for real-time data processing.
-*   **Modern Python:** The use of `pyproject.toml` for dependency management aligns with modern Python packaging standards.
-*   **API Abstraction:** The `BenzingaPressReleases` class in `test.py` demonstrates a good practice of abstracting API interactions into reusable classes.
-*   **Function Call Convention:** When making function calls, use the `parameter_name = actual_arguments` convention.
+Refer to `development_progress.md` for a detailed summary of completed work and recent progress, including:
 
-# Future Development
+*   Project scaffolding and initial core module implementations.
+*   Dependency management.
+*   Application orchestration in `main.py`.
+*   Refinement of `NewsHandler` with XML parsing.
+*   Enhanced `DetectionEngine` with placeholder "Shock Detection Algorithm."
+*   Implemented "Position Sizing Algorithm" in `ExecutionService`.
+*   Integrated SQLite for Trade and Position Records.
+*   Refined `IBKRConnector` API calls.
+*   Refined `DetectionEngine` Market Data and Technical Indicators.
+*   Implemented Real-time Market Data Streaming in `DetectionEngine`.
+*   Refined `PositionManager` P&L Calculation.
+*   Resolved various runtime errors (`ModuleNotFoundError`, `sqlalchemy.exc.OperationalError`, `AttributeError`s).
 
-The project has a solid foundation that can be extended in many ways:
+### Next Steps:
 
-*   **Order Management:** Implement functionality to place, modify, and cancel orders through the IBKR API.
-*   **Real-time Market Data:** Subscribe to real-time market data streams for stocks, options, and other instruments.
-*   **Trading Strategy Implementation:** Build and integrate automated trading strategies that react to news and market data.
-*   **Database Integration:** Store the collected data in a database for more robust analysis and backtesting.
-*   **GUI or Web Interface:** Create a user interface to visualize the data and manage the trading strategies.
+*   **Testing and Validation:** Implement comprehensive unit and integration tests for all modules.
+*   **Configuration Management:** Externalize all configurable parameters (e.g., IBKR connection details, strategy parameters, risk settings) into `config/config.yaml` and ensure they are properly loaded and utilized.
+*   **Error Handling and Robustness:** Enhance error handling, logging, and edge-case management across all modules for increased system robustness.
 
-# Agent Rules
+## 8. Agent Rules
 
 *   **Search Tool Usage:** Use the `google_web_search` tool to search for API usage, limitations, or any other information needed during development.
 *   **Documentation Reference:** When needed, reference `prd(api).md`, `tss.md`, and `development_progress.md` for project requirements, technical design, and development progress.

@@ -92,18 +92,48 @@ class IBKRConnector:
             self.reconnect_task = None
 
     # Placeholder methods for other functionalities
-    async def subscribe_to_news(self, symbols: list):
-        logging.info(f"Subscribing to news for symbols: {symbols}")
-        # ib_insync handles news articles via newsArticleEvent which is already set up in NewsHandler.
-        # The actual subscription to news topics/providers is typically done via reqMktData with specific generic ticks
-        # or by requesting news headlines. For now, we assume the NewsHandler will process incoming articles.
-        # If specific news subscriptions are needed, this method would be expanded.
-        for symbol in symbols:
-            contract = Contract(symbol=symbol, secType='STK', exchange='SMART', currency='USD')
-            # Requesting generic ticks for news (e.g., 292 for News Headlines)
-            # This might need adjustment based on specific news requirements and IBKR capabilities
-            self.ib.reqMktData(contract, '292', False, False) # 292 is generic tick for News Headlines
-            logging.info(f"Requested market data for news headlines for {symbol}")
+    async def subscribe_to_news(self, symbols: list, news_providers_config: list):
+        logging.info(f"Subscribing to news for symbols: {symbols} with providers: {news_providers_config}")
+        if not self.ib.isConnected():
+            logging.warning("IBKR not connected, cannot subscribe to news.")
+            return
+
+        try:
+            async def get_news_providers(news_providers: list):
+                active_provider_codes = []
+                
+                # Filter for configured news providers
+                active_provider_codes = []
+                for config_provider_name in news_providers_config:
+                    for ib_provider in ib_news_providers:
+                        if ib_provider.providerName.upper() == config_provider_name.upper():
+                            active_provider_codes.append(ib_provider.providerCode)
+                            break
+                
+                if not active_provider_codes:
+                    logging.warning(f"No active news providers found for configured: {news_providers_config}. Skipping news subscription.")
+                    return
+
+                # Construct genericTickList for news subscription
+                # Format: +[providerCode], e.g., '+BZ'
+                generic_tick_list = ''.join([f'+{code}' for code in active_provider_codes])
+                logging.info(f"Using genericTickList for news: {generic_tick_list}")
+
+                for symbol in symbols:
+                    contract = Contract(symbol=symbol, secType='STK', exchange='SMART', currency='USD')
+                    # Requesting market data with generic ticks for news providers
+                    self.ib.reqMktData(contract, generic_tick_list, False, False)
+                    logging.info(f"Requested market data for news from {generic_tick_list} for {symbol}")
+
+            if news_providers_config:
+                await get_news_providers(news_providers_config)
+            else:
+                # Get available news providers from IBKR
+                ib_news_providers = await self.ib.reqNewsProvidersAsync()
+                await get_news_providers(ib_news_providers)
+                
+        except Exception as e:
+            logging.error(f"Failed to subscribe to news: {e}")
 
     async def fetch_candles(self, contract, durationStr, barSizeSetting):
         logging.info(f"Fetching candles for {contract.symbol} (Duration: {durationStr}, Bar Size: {barSizeSetting})")

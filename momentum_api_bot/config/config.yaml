@@ -1,1 +1,18 @@
 # Configuration file for the Momentum API Bot
+
+ibkr:
+  host: 127.0.0.1
+  port: 7497
+  client_id: 1
+
+detection_engine:
+  num_workers: 2
+
+position_manager:
+  monitor_interval: 5
+
+database:
+  url: sqlite:///../data/trades.db
+
+news:
+  providers: ['BENZINGA'] # Example: Add other providers as needed
