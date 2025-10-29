@@ -71,3 +71,9 @@
     *   The bridge now uses the standard, blocking `EClient.run()` method in a dedicated thread, which is the official recommended approach for the `ibapi` library.
     *   API requests are now made via direct, thread-safe calls to `EClient` methods from the main `asyncio` application, removing a layer of complexity and potential errors.
     *   This new architecture is more robust, easier to understand, and less prone to threading issues.
+
+*   **Architectural Refinement: Fully Event-Driven Pipeline:**
+    *   Standardized all inter-service communication to use `asyncio.Queue`s, creating a fully event-driven and decoupled processing pipeline as outlined in `tech_stack.md`.
+    *   This replaces the previous mix of direct callbacks and queues with a consistent "Queue as Interface" pattern.
+    *   The `IBKRBridge` will now act as a producer, placing raw news data onto a dedicated `raw_news_queue`.
+    *   The `NewsHandler` will act as a consumer, reading from this queue, ensuring non-blocking processing and clear separation of concerns.

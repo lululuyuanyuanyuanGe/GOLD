@@ -1,2 +1,3 @@
 ### For some infrequeently invoked request like request new providers etc. We will use a fixed request id for them.
-IBKR will send all non data message through error channel, hence we need to carefully check the error code to decide if it is an actual error or not
+IBKR will send all non data message through error channel, hence we need to carefully check the error code to decide if it is an actual error or not。
+The entire system will be an event driven system that 

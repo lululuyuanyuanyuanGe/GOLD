@@ -43,12 +43,6 @@ class TestIBKRBridge(unittest.IsolatedAsyncioTestCase):
             # Give the background thread a moment to fully shut down
             await asyncio.sleep(1)
 
-    async def _news_handler_callback(self, article: str):
-        """Callback for the bridge to handle incoming news."""
-        logging.info(f"Received news article: {article[:100]}...")
-        self.received_article = article
-        self.news_received_event.set()
-
     async def test_02_subscribe_to_news(self):
         """
         Test subscribing to a news feed and receiving at least one article.
@@ -67,7 +61,7 @@ class TestIBKRBridge(unittest.IsolatedAsyncioTestCase):
 
         # For this test, we'll use Benzinga News.
         # The test will fail if the account is not subscribed to this provider.
-        news_provider_code = "BENZINGA"
+        news_provider_code = "BRFG"
         if not any(p['code'] == news_provider_code for p in providers):
             self.skipTest(f"Account not subscribed to the '{news_provider_code}' news provider.")
 

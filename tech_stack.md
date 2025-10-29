@@ -107,3 +107,24 @@ momentum_api_bot/
 ├── pyproject.toml
 └── README.md
 ```
+
+### System Architecture Summary
+
+The application is an event-driven, asynchronous system designed as a **decoupled processing pipeline**. It uses a hybrid concurrency model to safely interface with the synchronous Interactive Brokers API.
+
+**1. Core Concurrency Model:**
+    *   **Main Application:** Runs on a single thread using `asyncio` for high-performance, non-blocking I/O operations.
+    *   **IBKR API Interface:** The official `ibapi` library runs in its own dedicated background `threading.Thread` to prevent blocking the main application.
+
+**2. Communication and Data Flow:**
+    *   **Bridge-to-App:** A thread-safe `queue.Queue` is used as a bridge to pass incoming messages (market data, order statuses, news) from the API thread to the main `asyncio` application.
+    *   **Inter-Service Communication:** A series of `asyncio.Queue`s form a producer-consumer pipeline, passing data between internal components. This ensures non-blocking, decoupled processing.
+
+**3. Component Pipeline:**
+    *   **IBKR Bridge:** Manages the API thread and queues. Provides a high-level `async` interface for all IBKR interactions.
+    *   **News Handler:** Consumes raw news from the Bridge, processes it, and places structured news objects onto the next queue.
+    *   **Detection Engine:** Consumes structured news, applies the core "shock detection" logic, and produces `TradeSignal` objects onto the next queue.
+    *   **Execution Service:** Consumes `TradeSignal`s, converts them into valid IBKR orders, and uses the Bridge to send them.
+    *   **Position Manager:** A stateful service that monitors order statuses and account updates from the Bridge to manage the portfolio.
+
+This architecture maximizes performance by keeping the main thread non-blocked, ensures stability by isolating components, and is scalable for future enhancements.
