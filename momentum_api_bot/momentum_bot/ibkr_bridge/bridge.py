@@ -42,14 +42,13 @@ class IBKRBridge:
     # Fixed request ids for infrequently api calls
     REQ_ID_NEWS_PROVIDERS = -101
 
-    def __init__(self, host: str, port: int, client_id: int):
+    def __init__(self, host: str, port: int, client_id: int, raw_news_queue: Optional[asyncio.Queue] = None):
         self.state = "DISCONNECTED"
         self.host = host
         self.port = port
         self.client_id = client_id
+        self.raw_news_queue = raw_news_queue
         
-        self.news_handler_callback: Optional[Callable[[str], Coroutine[Any, Any, None]]] = None
-
         self.incoming_queue = queue.Queue()
         self.wrapper = IBWrapper(self.incoming_queue)
         self.client = IBClient(self.wrapper)
@@ -195,7 +194,7 @@ class IBKRBridge:
                 if msg_type in ['HISTORICAL_DATA_END', 'ERROR', 'ACCOUNT_SUMMARY_END', 'NEWS_PROVIDERS']:
                     self._handle_response_message(message)
                 elif msg_type == 'NEWS_TICK':
-                    self._handle_streaming_message(message)
+                    await self._handle_streaming_message(message)
                 else:
                     self._handle_system_message(message)
 
@@ -260,10 +259,10 @@ class IBKRBridge:
         # Clean up the pending request
         self._pending_requests.pop(reqId, None)
 
-    def _handle_streaming_message(self, message: dict):
+    async def _handle_streaming_message(self, message: dict):
         if message['type'] == 'NEWS_TICK':
-            if self.news_handler_callback and asyncio.iscoroutinefunction(self.news_handler_callback):
-                asyncio.create_task(self.news_handler_callback(message['data']['article']))
+            if self.raw_news_queue:
+                await self.raw_news_queue.put(message['data'])
 
     def _handle_system_message(self, message: dict):
         if message['type'] == 'NEXT_VALID_ID':
