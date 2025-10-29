@@ -40,7 +40,7 @@ class IBClient(EClient):
         """
         self.connect(host, port, client_id)
         logging.info("IBClient thread started and connected.")
-        
+
         while self.isConnected():
             try:
                 # Use a timeout to remain responsive to the connection status

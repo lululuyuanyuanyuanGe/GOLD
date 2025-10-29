@@ -16,7 +16,8 @@ import asyncio
 import queue
 import threading
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import Optional, Callable, Coroutine, Any, List
 from .client import IBClient
 from .wrapper import IBWrapper
 from ibapi.contract import Contract
@@ -28,7 +29,7 @@ class RequestContext:
     """Holds the context for a single pending request."""
     reqId: int
     future: asyncio.Future
-    data_aggregator: list = [] # For multi-part responses like historical data
+    data_aggregator: List = field(default_factory=list) # For multi-part responses like historical data
 
 class IBKRBridge:
     """
@@ -50,7 +51,7 @@ class IBKRBridge:
         self.port = port
         self.client_id = client_id
         
-        self.news_handler_callback = None # To be set by the news service
+        self.news_handler_callback: Optional[Callable[[str], Coroutine[Any, Any, None]]] = None # To be set by the news service
 
         self.incoming_queue = queue.Queue()
         self.outgoing_queue = queue.Queue()
@@ -200,6 +201,7 @@ class IBKRBridge:
         while self.state != "DISCONNECTED":
             try:
                 message = await asyncio.to_thread(self.incoming_queue.get)
+                print(f"received a message: {message}")
                 
                 msg_type = message.get('type')
                 reqId = message.get('data', {}).get('reqId')
@@ -268,6 +270,9 @@ class IBKRBridge:
         
         elif message['type'] == 'ERROR':
             logging.error(f"IBKR Error. Request ID: {message['data']['reqId']}, Code: {message['data']['code']}, Message: {message['data']['message']}")
+        
+        else:
+            return
         
         # TODO: Handle other system messages like order statuses by passing them
         # to the relevant service (e.g., a Position Manager callback)

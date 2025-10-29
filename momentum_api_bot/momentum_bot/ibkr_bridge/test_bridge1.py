@@ -8,8 +8,8 @@ from momentum_api_bot.momentum_bot.ibkr_bridge.bridge import IBKRBridge
 # --- Configuration ---
 # NOTE: These must match your running TWS/Gateway instance
 IBKR_HOST = "127.0.0.1"
-IBKR_PORT = 7497  # 7497 for TWS Paper Trading, 4002 for Gateway
-IBKR_CLIENT_ID = 101 
+IBKR_PORT = 4002
+IBKR_CLIENT_ID = 102
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')

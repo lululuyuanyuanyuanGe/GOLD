@@ -45,6 +45,7 @@ class IBWrapper(EWrapper):
 
     def error(self, reqId: int, errorCode: int, errorString: str):
         """EWrapper method that is called for any API error."""
+        logging.warning("There is a serious warning from the IBKR api wrapper call back message")
         self._enqueue_message('ERROR', {
             'reqId': reqId,
             'code': errorCode,
@@ -53,12 +54,13 @@ class IBWrapper(EWrapper):
 
     def nextValidId(self, orderId: int):
         """EWrapper method that provides the next valid ID for placing an order."""
+        logging.info("This is a test if the nextValidId() call successfully")
         self._enqueue_message('NEXT_VALID_ID', {'orderId': orderId})
 
     def connectAck(self):
         """EWrapper method called upon successful connection."""
         logging.info("IBKR API connection acknowledged.")
-        self._enqueue_message('CONNECTION_ACK', {})
+        # self._enqueue_message('CONNECTION_ACK', {})
 
     def connectionClosed(self):
         """EWrapper method called when the connection is closed."""
