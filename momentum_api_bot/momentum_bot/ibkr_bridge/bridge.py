@@ -1,217 +1,248 @@
-import threading
-import queue
-import time
-import logging
-import asyncio
-from dataclasses import dataclass
+"""
+Contains the IBKRBridge class, the central orchestrator for all communication
+with the Interactive Brokers API.
 
+This class is responsible for:
+1.  Managing the dedicated thread for the synchronous official 'ibapi'.
+2.  Instantiating and connecting the IBClient and IBWrapper.
+3.  Managing the thread-safe queues for sending and receiving messages.
+4.  Providing a high-level, asynchronous interface for the rest of the application.
+5.  Managing the request/response lifecycle using unique IDs and asyncio.Future objects.
+6.  Handling the connection state machine (Disconnected, Connecting, Operational).
+7.  Managing the generation of unique, thread-safe order IDs and request IDs.
+"""
+
+import asyncio
+import queue
+import threading
+import logging
+from .client import IBClient
+from .wrapper import IBWrapper
 from ibapi.contract import Contract
 from ibapi.order import Order
-from ibapi.tag_value import TagValue
-
-from ibkr_bridge.wrapper import IBWrapper
-from ibkr_bridge.client import IBClient
-
-# Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-
-
-@dataclass
-class RequestContext:
-    reqId: int
-    request_details: dict
-    future: asyncio.Future
-
 
 class IBKRBridge:
-    def __init__(self, host='127.0.0.1', port=4002, client_id=1):
-        self.host = host
-        self.port = port
-        self.client_id = client_id
+    """
+    The main bridge between the asynchronous application logic and the
+    synchronous, threaded IBKR API client.
+    """
 
-        self.incoming_queue = queue.Queue()  # From IBKR API to asyncio loop
-        self.outgoing_queue = queue.Queue()  # From asyncio loop to IBKR API
+    def __init__(self, host: str, port: int, client_id: int):
+        """
+        Initializes the bridge, but does not connect.
 
-        self.wrapper = IBWrapper(self.incoming_queue)
-        self.client = IBClient(self.wrapper)
+        Args:
+            host: The IP address of the TWS/Gateway.
+            port: The port number of the TWS/Gateway.
+            client_id: The client ID for this API session.
+        """
+        # --- State and Configuration ---
+        # self.state = "DISCONNECTED" # Manages connection status
+        # self.host, self.port, self.client_id = ...
 
-        self.api_thread = threading.Thread(target=self._run_api_loop, daemon=True)
-        self._is_connected = threading.Event()
+        # --- Queues for Thread Communication ---
+        # self.incoming_queue = queue.Queue() # Wrapper -> Bridge
+        # self.outgoing_queue = queue.Queue() # Bridge -> Client
 
-        # Here is the request id assignment algorithm
-        self._next_req_id = 0
-        self._req_id_lock = threading.Lock()
-        self._pending_requests = {} # Central registry for pending requests
+        # --- API Components ---
+        # self.wrapper = IBWrapper(self.incoming_queue)
+        # self.client = IBClient(self.wrapper)
+        # self.api_thread = None
 
-    def get_next_req_id(self):
-        with self._req_id_lock:
-            self._next_req_id += 1
-            return self._next_req_id
+        # --- Request/Response Management ---
+        # self._pending_requests = {} # The registry: reqId -> RequestContext
+        
+        # --- ID Generation ---
+        # self._next_req_id = 0
+        # self._req_id_lock = threading.Lock()
+        # self._next_order_id = -1 # Invalid until set by nextValidId
+        # self._order_id_lock = threading.Lock()
+        pass
+
+    # --- Public High-Level Async Methods (The Application Interface) ---
+
+    async def connect(self):
+        """
+        Connects to the IBKR Gateway and starts all processing loops.
+
+        This is the main entry point for the application. It will:
+        1. Start the dedicated API thread which runs the EClient event loop.
+        2. Initiate the EClient connection to the TWS/Gateway.
+        3. Start the asynchronous dispatcher task to process incoming messages.
+        4. Wait for the 'nextValidId' callback to confirm a successful connection.
+        5. Transition the bridge's state to 'OPERATIONAL'.
+        """
+        pass
+
+    async def disconnect(self):
+        """
+        Gracefully disconnects from the IBKR Gateway and shuts down.
+
+        This will:
+        1. Signal the API thread to stop by putting a 'STOP' message on the queue.
+        2. Wait for the API thread to join and terminate cleanly.
+        3. Cancel the asynchronous dispatcher task.
+        4. Disconnect the EClient.
+        """
+        pass
+
+    async def request_news_providers(self) -> list:
+        """
+        Requests the list of news providers the account is permissioned for.
+
+        This is a high-level async method that abstracts the underlying
+        request/response mechanism.
+
+        Returns:
+            A list of NewsProvider objects from the API.
+        """
+        pass
+
+    async def subscribe_to_news_feed(self, provider_code: str) -> int:
+        """
+        Subscribes to a real-time broadtape news feed.
+
+        Args:
+            provider_code: The code for the news provider (e.g., 'BRFG', 'BZ').
+
+        Returns:
+            The unique request ID (reqId) for this subscription, which can be
+            used to unsubscribe later.
+        """
+        pass
+
+    async def fetch_historical_data(self, contract: Contract, duration: str, bar_size: str) -> list:
+        """
+        Requests a batch of historical candle data.
+
+        This method will wait until the EWrapper receives the 'historicalDataEnd'
+        signal before returning the complete dataset.
+
+        Args:
+            contract: The contract to fetch data for.
+            duration: The duration of the request (e.g., '1 D', '3600 S').
+            bar_size: The size of the bars (e.g., '1 min').
+
+        Returns:
+            A list of historical bar data objects.
+        """
+        pass
+
+    async def place_order(self, contract: Contract, order: Order) -> int:
+        """
+        Places a new trade order.
+
+        This method handles getting a unique, thread-safe orderId and submitting
+        the request. The returned Future will resolve when the order submission
+        is initially acknowledged. Order status updates will arrive separately.
+
+        Args:
+            contract: The contract for the order.
+            order: The order object to be placed.
+
+        Returns:
+            The unique orderId used for this trade.
+        """
+        pass
     
-    async def fetch_market_data(self, contract: Contract) -> dict:
+    # ... other high-level async methods for reqMktData, reqPositions, etc. ...
+
+    # --- Internal Core Logic Methods ---
+
+    def _start_api_thread(self):
         """
-        Fetches market data for a given contract.
-        
+        Creates and starts the dedicated thread for the EClient loop.
+        """
+        pass
+
+    async def _dispatch_incoming_messages(self):
+        """
+        The main async task that processes messages from the EWrapper.
+
+        This task runs in an infinite loop on the main asyncio event loop. It
+        gets messages from the thread-safe 'incoming_queue', inspects their
+        type, and routes them to the appropriate handler (e.g., resolving a
+        Future in the request registry).
+        """
+        pass
+
+    def _handle_response_message(self, message: dict):
+        """
+        Handles messages that correspond to a pending request.
+
+        It looks up the reqId in the _pending_requests registry and resolves
+        the associated asyncio.Future with the message data. This is the core
+        of the request/response system.
+
         Args:
-            contract: The ibapi.contract.Contract object for which to fetch market data.
-            
-        Returns:
-            A dictionary containing the market data.
+            message: An incoming message dictionary containing a 'reqId'.
         """
-        req_id = self.get_next_req_id()
-        future = asyncio.get_running_loop().create_future()
-        context = RequestContext(reqId=req_id, request_details={'type': 'REQ_MKT_DATA', 'contract': contract}, future=future)
-        self._pending_requests[req_id] = context
-        
-        self.outgoing_queue.put({'type': 'REQ_MKT_DATA', 'reqId': req_id, 'contract': contract})
-        logging.info(f"Queued market data request for {contract.symbol} with reqId {req_id}")
-        return await future
+        pass
 
-    async def execute_an_order(self, contract: Contract, order: Order) -> dict:
+    def _handle_streaming_message(self, message: dict):
         """
-        Places an order for a given contract.
+        Handles messages that are part of a continuous stream (e.g., news).
         
+        These messages are not tied to a one-time Future but are instead
+        passed to other services, like the NewsHandler.
+
         Args:
-            contract: The ibapi.contract.Contract object for which to place the order.
-            order: The ibapi.order.Order object representing the order details.
-            
-        Returns:
-            A dictionary containing the order status or execution details.
+            message: An incoming message dictionary from a stream.
         """
-        req_id = self.get_next_req_id()
-        future = asyncio.get_running_loop().create_future()
-        context = RequestContext(reqId=req_id, request_details={'type': 'PLACE_ORDER', 'contract': contract, 'order': order}, future=future)
-        self._pending_requests[req_id] = context
-        
-        self.outgoing_queue.put({'type': 'PLACE_ORDER', 'reqId': req_id, 'contract': contract, 'order': order})
-        logging.info(f"Queued order placement for {contract.symbol} with reqId {req_id}")
-        return await future
+        pass
 
-    async def subscribe_news_provider(self, provider_code: str, article_id: str) -> dict:
+    def _handle_system_message(self, message: dict):
         """
-        Subscribes to a news provider or requests a specific news article.
-        
+        Handles system-level messages like errors or the nextValidId.
+
         Args:
-            provider_code: The code of the news provider (e.g., 'BZ').
-            article_id: The ID of the news article to request.
-            
+            message: An incoming message like {'type': 'ERROR', ...} or
+                     {'type': 'NEXT_VALID_ID', ...}.
+        """
+        pass
+
+    async def _send_request(self, request_type: str, **kwargs) -> asyncio.Future:
+        """
+        A generic, internal helper for making a request/response call.
+
+        This crucial method encapsulates the five steps of a request:
+        1. Get a unique reqId.
+        2. Create an asyncio.Future to act as a placeholder for the response.
+        3. Create a RequestContext and store it in the _pending_requests registry.
+        4. Package the request into a dictionary.
+        5. Put the request dictionary onto the 'outgoing_queue' for the client
+           thread to process.
+        
         Returns:
-            A dictionary containing the news article content.
+            The asyncio.Future object that the calling function can 'await'.
         """
-        req_id = self.get_next_req_id()
-        future = asyncio.get_running_loop().create_future()
-        context = RequestContext(reqId=req_id, request_details={'type': 'REQ_NEWS_ARTICLE', 'providerCode': provider_code, 'articleId': article_id}, future=future)
-        self._pending_requests[req_id] = context
-        
-        self.outgoing_queue.put({'type': 'REQ_NEWS_ARTICLE', 'reqId': req_id, 'providerCode': provider_code, 'articleId': article_id})
-        logging.info(f"Queued news article request for {article_id} from {provider_code} with reqId {req_id}")
-        return await future
+        pass
 
-    async def check_account_info(self, group: str = 'All', tags: str = 'AccountType,NetLiquidation,TotalCashValue,SettledCash,AccruedCash,BuyingPower,EquityWithLoanValue,PreviousDayEquityWithLoanValue,GrossPositionValue,MaintenanceMargin,InitMargin,AvailableFunds,UnrealizedPnL,RealizedPnL,DayTradesRemaining,Leverage') -> dict:
-        """
-        Checks the account information, including positions, balance, etc.
-        
-        Args:
-            group: The account summary group (e.g., 'All', 'Cash').
-            tags: A comma-separated string of tags for the account summary.
-            
-        Returns:
-            A dictionary containing the account information.
-        """
-        req_id = self.get_next_req_id()
-        future = asyncio.get_running_loop().create_future()
-        context = RequestContext(reqId=req_id, request_details={'type': 'REQ_ACCOUNT_SUMMARY', 'group': group, 'tags': tags}, future=future)
-        self._pending_requests[req_id] = context
-        
-        self.outgoing_queue.put({'type': 'REQ_ACCOUNT_SUMMARY', 'reqId': req_id, 'group': group, 'tags': tags})
-        logging.info(f"Queued account summary request with reqId {req_id}")
-        return await future
+    # --- ID Generation Methods ---
 
-    def _run_api_loop(self):
-        logging.info("Starting IBKR API thread...")
-        self.client.connect(self.host, self.port, self.client_id)
-        if self.client.isConnected():
-            self._is_connected.set()
-            logging.info("IBKR API client connected.")
-        self.client.run()
-        logging.info("IBKR API thread stopped.")
-
-    async def _process_incoming_messages(self):
+    def _get_next_req_id(self) -> int:
         """
-        Asynchronously processes messages from the incoming_queue (from IBKR API thread).
-        Dispatches responses to the appropriate asyncio.Future objects.
-        """
-        while True:
-            try:
-                # Use a non-blocking get with a timeout to allow for graceful shutdown
-                message = await asyncio.to_thread(self.incoming_queue.get, timeout=1)
-                req_id = message.get('reqId')
-                if req_id in self._pending_requests:
-                    context = self._pending_requests.pop(req_id)
-                    if not context.future.done():
-                        context.future.set_result(message)
-                else:
-                    logging.warning(f"Received unsolicited message or reqId not found: {message}")
-                self.incoming_queue.task_done()
-            except queue.Empty:
-                await asyncio.sleep(0.1)  # Briefly sleep if queue is empty to prevent busy-waiting
-            except Exception as e:
-                logging.error(f"Error processing incoming message: {e}")
+        Returns a new, unique, thread-safe request ID.
 
-    async def _process_outgoing_requests(self):
+        Used for all data requests (non-orders).
         """
-        Asynchronously processes requests from the outgoing_queue (to IBKR API thread).
-        Calls the appropriate EClient methods based on the request type.
+        pass
+
+    def _get_next_order_id(self) -> int:
         """
-        while True:
-            try:
-                request = await asyncio.to_thread(self.outgoing_queue.get, timeout=1)
-                req_id = request.get('reqId')
-                request_type = request.get('type')
-                
-                if request_type == 'REQ_MKT_DATA':
-                    contract = request.get('contract')
-                    # Assuming reqMktData takes a Contract object and a generic_tick_list string
-                    self.client.reqMktData(reqId=req_id, contract=contract, genericTickList="", snapshot=False, regulatorySnaphsot=False, mktDataOptions=[])
-                    logging.info(f"Requested market data for {contract.symbol} with reqId {req_id}")
-                elif request_type == 'PLACE_ORDER':
-                    contract = request.get('contract')
-                    order = request.get('order')
-                    self.client.placeOrder(reqId=req_id, contract=contract, order=order)
-                    logging.info(f"Placed order for {contract.symbol} with reqId {req_id}")
-                elif request_type == 'REQ_NEWS_ARTICLE':
-                    article_id = request.get('articleId')
-                    provider_code = request.get('providerCode')
-                    self.client.reqNewsArticle(reqId=req_id, providerCode=provider_code, articleId=article_id, newsArticleOptions=[])
-                    logging.info(f"Requested news article {article_id} from {provider_code} with reqId {req_id}")
-                elif request_type == 'REQ_ACCOUNT_SUMMARY':
-                    group = request.get('group', 'All')
-                    tags = request.get('tags', 'AccountType,NetLiquidation,TotalCashValue,SettledCash,AccruedCash,BuyingPower,EquityWithLoanValue,PreviousDayEquityWithLoanValue,GrossPositionValue,MaintenanceMargin,InitMargin,AvailableFunds,UnrealizedPnL,RealizedPnL,DayTradesRemaining,Leverage')
-                    self.client.reqAccountSummary(reqId=req_id, groupName=group, tags=tags)
-                    logging.info(f"Requested account summary with reqId {req_id}")
-                else:
-                    logging.warning(f"Unknown request type: {request_type} for reqId {req_id}")
-                self.outgoing_queue.task_done()
-            except queue.Empty:
-                await asyncio.sleep(0.1)
-            except Exception as e:
-                logging.error(f"Error processing outgoing request: {e}")
+        Returns a new, unique, thread-safe order ID.
 
-
-    async def start(self):
+        This method MUST wait until the initial nextValidId has been received
+        from the server before it can provide an ID. It then increments the
+        stored value for subsequent calls.
         """
-        Starts the IBKR API thread and waits for the connection to be established.
-        Also initiates the asynchronous processing of incoming and outgoing messages.
+        pass
+    
+    def _set_initial_order_id(self, order_id: int):
         """
-        logging.info("Starting IBKRBridge...")
-        self.api_thread.start()
-        logging.info("Waiting for IBKR API client to connect...")
-        self._is_connected.wait()  # Wait until the API client is connected
-        logging.info("IBKR API client connected. Starting message processing tasks.")
-        
-        # Start the asynchronous tasks for processing queues
-        asyncio.create_task(self._process_incoming_messages())
-        asyncio.create_task(self._process_outgoing_requests())
+        Sets the starting order ID after receiving the nextValidId callback.
 
-
-   
+        This method is called by the dispatcher when a 'NEXT_VALID_ID' message
+        is received.
+        """
+        pass

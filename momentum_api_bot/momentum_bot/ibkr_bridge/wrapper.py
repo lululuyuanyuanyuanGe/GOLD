@@ -11,7 +11,7 @@ ensuring this class remains a simple, non-blocking data receiver.
 """
 
 from ibapi.wrapper import EWrapper
-from ibapi.contract import Contract
+from ibapi.contract import Contract, ContractDetails
 from ibapi.order import Order, OrderState
 from ibapi.ticktype import TickTypeEnum
 from ibapi.commission_report import CommissionReport
@@ -33,179 +33,147 @@ class IBWrapper(EWrapper):
                                      All callback methods will put their
                                      data into this queue.
         """
-        # Call the parent __init__ from EWrapper
-        # Store the queue as an instance variable.
-        pass
+        EWrapper.__init__(self)
+        self.incoming_queue = incoming_messages_queue
 
-    # --- Core Callback Methods ---
+    def _enqueue_message(self, msg_type: str, data: dict):
+        """A standardized helper to put messages on the queue."""
+        self.incoming_queue.put({'type': msg_type, 'data': data})
+
+    # --- Core System & Connection Callbacks ---
 
     def error(self, reqId: int, errorCode: int, errorString: str):
-        """
-        EWrapper method that is called for any API error.
-
-        This is a critical method for logging and error handling. It packages
-        error information and puts it onto the queue.
-
-        Args:
-            reqId: The request ID associated with the error, or -1 for system messages.
-            errorCode: The numeric error code.
-            errorString: The human-readable error message.
-        """
-        pass
+        """EWrapper method that is called for any API error."""
+        self._enqueue_message('ERROR', {
+            'reqId': reqId,
+            'code': errorCode,
+            'message': errorString
+        })
 
     def nextValidId(self, orderId: int):
-        """
-        EWrapper method that provides the next valid ID for placing an order.
+        """EWrapper method that provides the next valid ID for placing an order."""
+        self._enqueue_message('NEXT_VALID_ID', {'orderId': orderId})
 
-        This is typically received immediately after a successful connection.
-        We capture this and put it on the queue so the main application knows
-        it's safe to start placing orders.
+    def connectAck(self):
+        """EWrapper method called upon successful connection."""
+        self._enqueue_message('CONNECTION_ACK', {})
 
-        Args:
-            orderId: The next valid order ID.
-        """
-        pass
+    def connectionClosed(self):
+        """EWrapper method called when the connection is closed."""
+        self._enqueue_message('CONNECTION_CLOSED', {})
 
     # --- News Callback Methods ---
 
-    def newsArticle(self, reqId: int, articleType: int, articleText: str):
-        """
-        EWrapper method called when a news article is received.
-
-        This is for DEPRECATED news requests. The primary news feed will
-        come through tick-by-tick data.
-
-        Args:
-            reqId: The request ID of the news subscription.
-            articleType: The type of article (0 for plain text, 1 for HTML).
-            articleText: The content of the article.
-        """
-        pass
-    
     def newsProviders(self, newsProviders):
-        """
-        EWrapper method that returns the list of available news providers.
+        """EWrapper method that returns the list of available news providers."""
+        # The newsProviders object needs to be converted to a serializable format (e.g., list of dicts)
+        providers_data = [{'code': p.code, 'name': p.name} for p in newsProviders]
+        self._enqueue_message('NEWS_PROVIDERS', {'providers': providers_data})
 
-        This is the response to the EClient.reqNewsProviders() call.
-
-        Args:
-            newsProviders: A list of NewsProvider objects.
-        """
-        pass
+    def tickString(self, reqId: int, tickType: int, value: str):
+        """E-Wrapper method for tick types that return a string. This includes real-time news headlines."""
+        # We assume tickType 32 (RT_NEWS_ALERT) or similar, but will pass it along
+        if tickType in [TickTypeEnum.RT_NEWS_ALERT]: # Example, might need more tick types
+             self._enqueue_message('NEWS_TICK', {
+                'reqId': reqId,
+                'article': value
+            })
+        else:
+            # Handle other string ticks if necessary, or ignore
+            pass
 
     # --- Order and Position Callback Methods ---
 
     def openOrder(self, orderId: int, contract: Contract, order: Order, orderState: OrderState):
-        """
-        EWrapper method that provides data about an open order.
+        """EWrapper method that provides data about an open order."""
+        self._enqueue_message('OPEN_ORDER', {
+            'orderId': orderId,
+            'contract': contract,
+            'order': order,
+            'orderState': orderState
+        })
 
-        This is called in response to reqOpenOrders() and after placing a new
-        order.
-
-        Args:
-            orderId: The order's unique ID.
-            contract: The Contract for the order.
-            order: The Order object itself.
-            orderState: The state of the order (e.g., Submitted, Filled).
-        """
-        pass
-
+    def openOrderEnd(self):
+        """EWrapper method called after all open orders have been sent."""
+        self._enqueue_message('OPEN_ORDER_END', {})
+        
     def orderStatus(self, orderId: int, status: str, filled: float, remaining: float, avgFillPrice: float, permId: int, parentId: int, lastFillPrice: float, clientId: int, whyHeld: str, mktCapPrice: float):
-        """
-        EWrapper method called when the status of an order changes.
-
-        This is a critical callback for tracking fills and order lifecycle.
-
-        Args:
-            orderId: The order's unique ID.
-            status: The new status of the order (e.g., 'Filled', 'Cancelled').
-            filled: The number of shares that have been filled.
-            remaining: The number of shares remaining to be filled.
-            avgFillPrice: The average price of the filled shares.
-            ...and other status-related fields.
-        """
-        pass
+        """E-Wrapper method called when the status of an order changes."""
+        self._enqueue_message('ORDER_STATUS', {
+            'orderId': orderId,
+            'status': status,
+            'filled': filled,
+            'remaining': remaining,
+            'avgFillPrice': avgFillPrice,
+            'permId': permId
+        })
 
     def position(self, account: str, contract: Contract, position: float, avgCost: float):
-        """
-        EWrapper method that provides information about a position in the portfolio.
+        """E-Wrapper method that provides information about a position in the portfolio."""
+        self._enqueue_message('POSITION', {
+            'account': account,
+            'contract': contract,
+            'position': position,
+            'avgCost': avgCost
+        })
+    
+    def positionEnd(self):
+        """EWrapper method called after all position data has been sent."""
+        self._enqueue_message('POSITION_END', {})
 
-        This is the response to the EClient.reqPositions() call.
-
-        Args:
-            account: The account ID.
-            contract: The Contract of the position.
-            position: The number of shares held (can be positive or negative).
-            avgCost: The average cost of the position.
-        """
-        pass
+    def accountSummary(self, reqId: int, account: str, tag: str, value: str, currency: str):
+        """E-Wrapper method providing account summary data."""
+        self._enqueue_message('ACCOUNT_SUMMARY', {
+            'reqId': reqId,
+            'account': account,
+            'tag': tag,
+            'value': value,
+            'currency': currency
+        })
+        
+    def accountSummaryEnd(self, reqId: int):
+        """EWrapper method called after all account summary data has been sent."""
+        self._enqueue_message('ACCOUNT_SUMMARY_END', {'reqId': reqId})
 
     # --- Market Data Callback Methods ---
 
     def tickPrice(self, reqId: int, tickType: int, price: float, attrib):
-        """
-        EWrapper method called with real-time price updates for a subscription.
-
-        Args:
-            reqId: The request ID of the market data subscription.
-            tickType: The type of price tick (e.g., Bid, Ask, Last).
-            price: The actual price value.
-            attrib: Tick attributes.
-        """
-        pass
+        """EWrapper method called with real-time price updates for a subscription."""
+        self._enqueue_message('TICK_PRICE', {
+            'reqId': reqId,
+            'tickType': TickTypeEnum.idx2name[tickType], # Convert index to readable name
+            'price': price
+        })
     
     def tickSize(self, reqId: int, tickType: int, size: int):
-        """
-        EWrapper method called with real-time size updates (e.g., volume).
-
-        Args:
-            reqId: The request ID of the market data subscription.
-            tickType: The type of size tick (e.g., Volume, BidSize, AskSize).
-            size: The actual size value.
-        """
-        pass
-
-    def tickString(self, reqId: int, tickType: int, value: str):
-        """
-        EWrapper method for tick types that return a string. This includes
-        real-time news headlines.
-
-        This is the primary callback for our news feed.
-
-        Args:
-            reqId: The request ID of the subscription.
-            tickType: The type of tick. For news, this is often '47' (RT_NEWS_ALERT).
-            value: The string data, which for news, is the XML article.
-        """
-        pass
+        """EWrapper method called with real-time size updates (e.g., volume)."""
+        self._enqueue_message('TICK_SIZE', {
+            'reqId': reqId,
+            'tickType': TickTypeEnum.idx2name[tickType], # Convert index to readable name
+            'size': size
+        })
 
     def historicalData(self, reqId: int, bar):
-        """
-        EWrapper method that provides a single bar of historical data.
-
-        This method is called repeatedly for each bar in the requested dataset.
-
-        Args:
-            reqId: The request ID of the historical data request.
-            bar: An object containing the bar data (Date, Open, High, Low, Close, Volume, etc.).
-        """
-        pass
+        """EWrapper method that provides a single bar of historical data."""
+        bar_data = {
+            'date': bar.date,
+            'open': bar.open,
+            'high': bar.high,
+            'low': bar.low,
+            'close': bar.close,
+            'volume': bar.volume,
+            'barCount': bar.barCount,
+            'average': bar.average
+        }
+        self._enqueue_message('HISTORICAL_DATA_BAR', {
+            'reqId': reqId,
+            'bar': bar_data
+        })
 
     def historicalDataEnd(self, reqId: int, start: str, end: str):
-        """
-        EWrapper method called after all historical data bars for a request
-        have been received.
-
-        This is a crucial signal to the main application that the historical
-        data request is complete.
-
-        Args:
-            reqId: The request ID of the historical data request.
-            start: The start date of the data.
-            end: The end date of the data.
-        """
-        pass
-
-    # ... other EWrapper methods can be implemented as needed, but they will all
-    # follow the same pattern: package the arguments into a dictionary and
-    # put it onto the incoming_messages_queue. ...
+        """E-Wrapper method called after all historical data bars for a request have been received."""
+        self._enqueue_message('HISTORICAL_DATA_END', {
+            'reqId': reqId,
+            'start': start,
+            'end': end
+        })
