@@ -46,13 +46,32 @@ class IBWrapper(EWrapper):
 
     # --- Core System & Connection Callbacks ---
 
-    def error(self, reqId: int, errorCode: int, errorString: str):
-        """EWrapper method that is called for any API error."""
-        logging.warning("There is a serious warning from the IBKR api wrapper call back message")
+    def error(self, reqId: int, errorCode: int, errorString: str, advancedOrderRejectJson: str = ""):
+        """
+        EWrapper method that is called for any API error. This method is also
+        used for informational messages. We will filter out messages that are
+        not true errors.
+        See: https://interactivebrokers.github.io/tws-api/message_codes.html
+        """
+        # Overriding the EWrapper method. The `advancedOrderRejectJson` parameter was added in later API versions.
+
+        # These are not errors, but informational messages.
+        # We will log them and not treat them as errors.
+        INFO_CODES = {
+            2104, 2106, 2158, 2100, 2103, 2105, 2107, 2108, 2119, 2150,
+            2168, 2169, 2170, 2157
+        }
+
+        if errorCode in INFO_CODES:
+            logging.info(f"IBKR Info (Code: {errorCode}): {errorString}")
+            return
+
+        # For all other codes, treat it as an error.
+        logging.error(f"IBKR Error (ReqId: {reqId}, Code: {errorCode}): {errorString}")
         self._enqueue_message('ERROR', {
             'reqId': reqId,
             'code': errorCode,
-            'message': errorString
+            'message': errorString,
         })
 
     def nextValidId(self, orderId: int):

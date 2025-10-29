@@ -115,18 +115,29 @@ class IBKRBridge:
         """
         logging.info("Requesting news providers...")
         
-        req_id = self.REQ_ID_NEWS_PROVIDERS # Use our fixed, conventional ID
+        req_id = self.REQ_ID_NEWS_PROVIDERS # This is -101
         future = asyncio.get_running_loop().create_future()
         
-        # Register the future with our fixed ID
-        self._pending_requests[req_id] = RequestContext(reqId=req_id, future=future, request_type='REQ_NEWS_PROVIDERS')
+        # Manually register the future with the correct, fixed ID
+        self._pending_requests[req_id] = RequestContext(
+            reqId=req_id,
+            future=future,
+            request_type='NEWS_PROVIDERS'
+        )
         
         # Make the direct API call
-        self.client.reqNewsProviders() 
+        self.client.reqNewsProviders()
         
         # Wait for the future to be resolved by the dispatcher
-        response = await future
-        return response.get('data', {}).get('providers', [])
+        try:
+            # Add a timeout for safety
+            response = await asyncio.wait_for(future, timeout=10)
+            return response.get('data', {}).get('providers', [])
+        except asyncio.TimeoutError:
+            logging.error("Request for news providers timed out.")
+            # Clean up the pending request to prevent memory leaks
+            self._pending_requests.pop(req_id, None)
+            return []
 
     async def subscribe_to_news_feed(self, provider_code: str):
         req_id = self._get_next_req_id()
@@ -181,10 +192,8 @@ class IBKRBridge:
                 logging.debug(f"Dispatcher received message: {message['type']}")
                 
                 msg_type = message.get('type')
-                if msg_type in ['HISTORICAL_DATA_END', 'ERROR', 'ACCOUNT_SUMMARY_END']:
+                if msg_type in ['HISTORICAL_DATA_END', 'ERROR', 'ACCOUNT_SUMMARY_END', 'NEWS_PROVIDERS']:
                     self._handle_response_message(message)
-                elif msg_type == 'NEWS_PROVIDERS': # Special handling for reqId-less responses
-                    self._handle_reqid_less_response(message)
                 elif msg_type == 'NEWS_TICK':
                     self._handle_streaming_message(message)
                 else:
@@ -196,49 +205,60 @@ class IBKRBridge:
             except Exception:
                 logging.exception("Error in message dispatcher.")
 
-    def _handle_reqid_less_response(self, message: dict):
-        """Handles responses that don't have a reqId in their callback."""
-        msg_type = message['type']
-        for reqId, context in list(self._pending_requests.items()):
-            if context.request_type == msg_type:
-                if not context.future.done():
-                    context.future.set_result(message)
-                    self._pending_requests.pop(reqId)
-                return
-
     def _handle_response_message(self, message: dict):
+        """
+        Handles messages that correspond to a pending request, resolving the
+        associated asyncio.Future.
+        
+        It can find the pending request in two ways:
+        1. By `reqId` for most standard requests.
+        2. By `request_type` for the few API calls that don't include a `reqId`
+           in their response callbacks (e.g., reqNewsProviders).
+        """
+        msg_type = message['type']
         reqId = message.get('data', {}).get('reqId')
-        context = self._pending_requests.get(reqId)
+
+        context = None
+        # Find the request context, trying by reqId first, then by type.
+        if reqId is not None:
+            context = self._pending_requests.get(reqId)
+        else:
+            # For reqId-less responses, find the first pending request with a matching type.
+            for id, ctx in list(self._pending_requests.items()):
+                if ctx.request_type == msg_type:
+                    context = ctx
+                    reqId = id  # Use the internal ID for removal
+                    break
+        
         if not context:
+            logging.debug(f"No pending request found for message: {message}")
             return
 
-        if message['type'] == 'HISTORICAL_DATA_BAR':
+        # --- Handle different message types ---
+
+        if msg_type == 'HISTORICAL_DATA_BAR':
             context.data_aggregator.append(message['data']['bar'])
-        
-        elif message['type'] == 'HISTORICAL_DATA_END':
+            return  # Don't resolve future yet, wait for HISTORICAL_DATA_END
+
+        elif msg_type == 'HISTORICAL_DATA_END':
             result = {'reqId': reqId, 'data': context.data_aggregator or []}
             if not context.future.done():
                 context.future.set_result(result)
-            self._pending_requests.pop(reqId, None)
-
-        elif message["type"] == 'ERROR':
-            code = message.get('data', {}).get('code')
-            # Only treat non-informational messages as fatal errors for a request.
-            # Informational codes are in the 2100-2200 range, plus a few others.
-            if not (2100 <= code <= 2200 or code == 2158): 
-                if not context.future.done():
-                    error_msg = f"API Error Code {code}: {message.get('data', {}).get('message')}"
-                    context.future.set_exception(RuntimeError(error_msg))
-                self._pending_requests.pop(reqId, None)
-                
-            else:
-                # This is just an informational message, log it and ignore it.
-                logging.info(f"IBKR Info for reqId {reqId}: Code {code}, Message: {message.get('data', {}).get('message')}")
-                
-        else: # For simple, single-response messages
+        
+        elif msg_type == 'NEWS_PROVIDERS':
             if not context.future.done():
                 context.future.set_result(message)
-                self._pending_requests.pop(reqId, None)
+                logging.info("Successfully receives all news providers")
+
+        elif msg_type == 'ERROR' and not context.future.done():
+            context.future.set_exception(RuntimeError(message['data']['message']))
+
+        else: # Default handler for simple request/response
+            if not context.future.done():
+                context.future.set_result(message)
+        
+        # Clean up the pending request
+        self._pending_requests.pop(reqId, None)
 
     def _handle_streaming_message(self, message: dict):
         if message['type'] == 'NEWS_TICK':
