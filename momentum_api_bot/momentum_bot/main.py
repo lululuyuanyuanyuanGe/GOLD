@@ -55,69 +55,44 @@ async def main():
     Session = init_db(config["database"]["url"])
     logging.info(f"Database initialized at {config["database"]["url"]}")
 
-    # Initialize components
+    # --- Queues for Inter-Service Communication ---
+    raw_news_queue = asyncio.Queue()        # Bridge -> NewsHandler
+    processed_news_queue = asyncio.Queue()  # NewsHandler -> DetectionEngine
+    trade_signal_queue = asyncio.Queue()    # DetectionEngine -> ExecutionService
+
+    # --- Initialize Components ---
     ibkr_bridge = IBKRBridge(
         host=config["ibkr"]["host"],
         port=config["ibkr"]["port"],
-        client_id=config["ibkr"]["client_id"]
+        client_id=config["ibkr"]["client_id"],
+        raw_news_queue=raw_news_queue
     )
 
-    # The incoming_queue from IBKRBridge will be consumed by a main events task
-    # that then puts relevant messages onto an asyncio.Queue for the NewsHandler.
-    # The outgoing_queue of IBKRBridge will be used by DetectionEngine and ExecutionService.
-    ibkr_incoming_queue = ibkr_bridge.get_incoming_queue() # Thread-safe queue from IBKR API thread
-    ibkr_outgoing_queue = ibkr_bridge.outgoing_queue # Thread-safe queue to IBKR API thread
+    news_handler = NewsHandler(
+        raw_news_queue=raw_news_queue,
+        processed_news_queue=processed_news_queue
+    )
 
-    # Asyncio queues for inter-service communication within the asyncio loop
-    news_processing_queue = asyncio.Queue() # News items after initial processing by events
-    execution_request_queue = asyncio.Queue() # Requests from DetectionEngine to ExecutionService
-
-    # Initialize services
-    news_handler = NewsHandler(news_processing_queue)
-    detection_engine = DetectionEngine(ibkr_bridge, news_handler.get_processed_news_queue(), execution_request_queue, num_workers=config["detection_engine"]["num_workers"])
-    execution_service = ExecutionService(ibkr_bridge, execution_request_queue, Session)
+    detection_engine = DetectionEngine(ibkr_bridge, processed_news_queue, trade_signal_queue, num_workers=config["detection_engine"]["num_workers"])
+    execution_service = ExecutionService(ibkr_bridge, trade_signal_queue, Session)
     position_manager = PositionManager(ibkr_bridge, execution_service, Session)
 
-    async def events_fetcher_from_IBKR():
-        while True:
-            try:
-                # Get message from the synchronous IBKR incoming queue
-                message = await asyncio.to_thread(ibkr_incoming_queue.get)
-                logging.debug(f"events received message: {message['type']}")
 
-                message_type = message.get("type")
-                if message_type == "newsArticle":
-                    await news_processing_queue.put(message)
-                elif message_type == "error":
-                    req_id = message.get("reqId", -1)
-                    error_code = message.get("errorCode")
-                    error_string = message.get("errorString")
-                    logging.error(f"IBKR Error in events (ReqId: {req_id}, Code: {error_code}): {error_string}")
-                elif message_type == "nextValidId":
-                    logging.info(f"Received nextValidId: {message['orderId']}")
-                elif message_type == "connectionClosed":
-                    logging.warning("IBKR connection closed via events.")
-                # Add other message types to handle as needed
-                # For now, we'll just log them if not specifically handled
-                else:
-                    logging.debug(f"events handling unrouted message type: {message_type}")
-
-                ibkr_incoming_queue.task_done()
-            except Exception as e:
-                logging.error(f"Error in events_fetcher_from_IBKR: {e}", exc_info=True)
-            await asyncio.sleep(0.01) # Yield control
-
-    # Start the IBKR Bridge thread
-    ibkr_bridge.start()
-    while not ibkr_bridge.is_connected():
-        logging.info("Waiting for IBKR Bridge to connect...")
-        await asyncio.sleep(1)
+    # --- Start the Application ---
+    # 1. Connect the IBKR Bridge
+    await ibkr_bridge.connect()
     logging.info("IBKR Bridge connected and operational.")
 
-    # Start the events task
-    events = asyncio.create_task(events_fetcher_from_IBKR())
+    # 2. Subscribe to news feeds specified in the config
+    news_providers = config.get("news", {}).get("providers", [])
+    if news_providers:
+        logging.info(f"Subscribing to news providers: {news_providers}")
+        for provider in news_providers:
+            await ibkr_bridge.subscribe_to_news_feed(provider)
+    else:
+        logging.warning("No news providers specified in config. No news will be processed.")
 
-    # Start other services
+    # 3. Start other services
     await news_handler.start()
     await detection_engine.start()
     await execution_service.start()
@@ -126,23 +101,25 @@ async def main():
     logging.info("Momentum API Bot services started. Press Ctrl+C to stop.")
 
     try:
-        # Keep the main task alive
-        while True:
-            await asyncio.sleep(3600) # Sleep for an hour, or indefinitely
-    except asyncio.CancelledError:
-        logging.info("Main task cancelled.")
-    except KeyboardInterrupt:
-        logging.info("Application stopped by user (Ctrl+C).")
+        # Keep the main task alive by waiting indefinitely
+        await asyncio.Event().wait()
+    except (KeyboardInterrupt, asyncio.CancelledError):
+        logging.info("Application shutdown initiated.")
     finally:
-        events.cancel()
-        await events # Await cancellation
-        logging.info("Shutting down Momentum API Bot...")
-        # Stop services gracefully
-        await position_manager.stop()
-        await execution_service.stop()
-        await detection_engine.stop()
-        # news_handler doesn't have a stop method as it's event-driven
-        ibkr_bridge.disconnect()
+        logging.info("Shutting down services...")
+        
+        # The order of shutdown can be important
+        if 'position_manager' in locals():
+            await position_manager.stop()
+        if 'execution_service' in locals():
+            await execution_service.stop()
+        if 'detection_engine' in locals():
+            await detection_engine.stop()
+        
+        # Disconnect the bridge last
+        if 'ibkr_bridge' in locals() and ibkr_bridge.state != "DISCONNECTED":
+            await ibkr_bridge.disconnect()
+            
         logging.info("Momentum API Bot shutdown complete.")
 
 if __name__ == "__main__":
