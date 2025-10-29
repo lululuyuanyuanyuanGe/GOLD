@@ -36,10 +36,10 @@ The system is modular, with distinct components for connection management, news 
 
 ## 4. System Architecture & Data Flow (from tss.md)
 
-The application operates as a single, long-running asynchronous process. Communication flows through a central `IBKRConnector`, with news processing decoupled via an `asyncio.Queue`.
+The application operates as a single, long-running asynchronous process. Communication flows through a central `IBKRBridge`, with news processing decoupled via an `asyncio.Queue`.
 
 ```
-IBKR API <--> [IBKR Connector] <--> [News Handler (Producer)] -> [Asyncio Queue]
+IBKR API <--> [IBKR Bridge] <--> [News Handler (Producer)] -> [Asyncio Queue]
     ^                   |                                              |
     | (Data Req/Resp)   | (Order Flow)                                 v
     |                   v                                              |

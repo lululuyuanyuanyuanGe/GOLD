@@ -12,6 +12,7 @@ from ibapi.order import Order
 from ibapi.contract import Contract
 import queue
 import logging
+import time
 
 class IBClient(EClient):
     """
@@ -27,9 +28,9 @@ class IBClient(EClient):
         Args:
             wrapper: An instance of our custom IBWrapper class.
         """
-        pass
+        super().__init__(wrapper)
 
-    def run_loop(self, outgoing_requests_queue: queue.Queue):
+    def run_loop(self, outgoing_requests_queue: queue.Queue, host: str, port: int, client_id: int):
         """
         This is the main event loop for the EClient thread.
 
@@ -37,7 +38,25 @@ class IBClient(EClient):
         asyncio application and dispatches them to the appropriate EClient
         methods. This method is the "heartbeat" of the client thread.
         """
-        pass
+        self.connect(host, port, client_id)
+        logging.info("IBClient thread started and connected.")
+        
+        while self.isConnected():
+            try:
+                # Use a timeout to remain responsive to the connection status
+                request = outgoing_requests_queue.get(timeout=1.0)
+                if request.get('type') == 'STOP':
+                    logging.info("IBClient thread received STOP signal.")
+                    break
+                self._process_request(request)
+            except queue.Empty:
+                # No new requests, continue loop
+                continue
+            except Exception:
+                logging.exception("Exception in IBClient run_loop.")
+        
+        logging.info("IBClient run_loop finished.")
+
 
     def _process_request(self, request: dict):
         """
@@ -47,143 +66,84 @@ class IBClient(EClient):
         and calls the corresponding low-level EClient method with the provided
         parameters.
         """
-        pass
+        request_type = request.get('type')
+        if not request_type:
+            logging.warning(f"Received request without a type: {request}")
+            return
+
+        # Pop the type to clean up kwargs for the execute methods
+        request.pop('type', None)
+
+        if request_type == 'REQ_POSITIONS':
+            self._execute_req_positions()
+        elif request_type == 'CANCEL_POSITIONS':
+            self._execute_cancel_positions()
+        elif request_type == 'PLACE_ORDER':
+            self._execute_place_order(**request)
+        elif request_type == 'CANCEL_ORDER':
+            self._execute_cancel_order(**request)
+        elif request_type == 'REQ_OPEN_ORDERS':
+            self._execute_req_open_orders()
+        elif request_type == 'REQ_MKT_DATA':
+            self._execute_req_mkt_data(**request)
+        elif request_type == 'CANCEL_MKT_DATA':
+            self._execute_cancel_mkt_data(**request)
+        elif request_type == 'REQ_HISTORICAL_DATA':
+            self._execute_req_historical_data(**request)
+        elif request_type == 'SUBSCRIBE_NEWS_FEED':
+            self._execute_subscribe_news_feed(**request)
+        elif request_type == 'UNSUBSCRIBE_NEWS_FEED':
+            self._execute_unsubscribe_news_feed(**request)
+        elif request_type == 'REQ_NEWS_PROVIDERS':
+            self._execute_req_news_providers()
+        else:
+            logging.warning(f"Unknown request type received: {request_type}")
 
     # --- Specific Request Handling Methods ---
-    # These methods are called by _process_request based on the request type.
-
-    # --- Account and Position Management ---
 
     def _execute_req_positions(self):
-        """
-        Calls the underlying EClient.reqPositions() method.
-
-        This requests a summary of all account positions. The response will be
-        sent to the EWrapper.position() and EWrapper.positionEnd() callbacks.
-        """
-        pass
+        """Calls the underlying EClient.reqPositions() method."""
+        self.reqPositions()
 
     def _execute_cancel_positions(self):
-        """
-        Calls the underlying EClient.cancelPositions() method.
-
-        This cancels a previous request for positions.
-        """
-        pass
-
-    # --- Order Management ---
+        """Calls the underlying EClient.cancelPositions() method."""
+        self.cancelPositions()
 
     def _execute_place_order(self, reqId: int, contract: Contract, order: Order):
-        """
-        Calls the underlying EClient.placeOrder method.
-        
-        Args:
-            reqId: The unique identifier for this order (nextValidId).
-            contract: The ibapi.contract.Contract object for the order.
-            order: The ibapi.order.Order object defining the order.
-        """
-        pass
+        """Calls the underlying EClient.placeOrder method."""
+        self.placeOrder(reqId, contract, order)
 
     def _execute_cancel_order(self, orderId: int):
-        """
-        Calls the underlying EClient.cancelOrder method.
-
-        Args:
-            orderId: The unique identifier of the order to be cancelled.
-        """
-        pass
+        """Calls the underlying EClient.cancelOrder method."""
+        self.cancelOrder(orderId)
     
     def _execute_req_open_orders(self):
-        """
-        Calls the underlying EClient.reqOpenOrders() method.
-
-        Requests all open orders placed from this client. The response will be
-        sent to the EWrapper.openOrder() and EWrapper.openOrderEnd() callbacks.
-        """
-        pass
-
-    # --- Market Data ---
+        """Calls the underlying EClient.reqOpenOrders() method."""
+        self.reqOpenOrders()
 
     def _execute_req_mkt_data(self, reqId: int, contract: Contract, genericTickList: str, snapshot: bool, regulatorySnapshot: bool):
-        """
-        Calls the underlying EClient.reqMktData method to subscribe to
-        real-time market data for a specific contract (e.g., a stock).
+        """Calls the underlying EClient.reqMktData method."""
+        self.reqMktData(reqId, contract, genericTickList, snapshot, regulatorySnapshot, [])
 
-        Args:
-            reqId: The unique identifier for this market data request.
-            contract: The Contract to subscribe to.
-            genericTickList: A string of generic tick types.
-            snapshot: If False, requests a real-time stream.
-            regulatorySnapshot: If False, is the standard request type.
-        """
-        pass
-    
     def _execute_cancel_mkt_data(self, reqId: int):
-        """
-        Calls the underlying EClient.cancelMktData method to unsubscribe
-        from a real-time market data stream.
+        """Calls the underlying EClient.cancelMktData method."""
+        self.cancelMktData(reqId)
 
-        Args:
-            reqId: The unique identifier of the original subscription request.
-        """
-        pass
-
-    def _execute_req_historical_data(self, reqId: int, contract: Contract, endDateTime: str, durationStr: str, barSizeSetting: str, whatToShow: str, useRTH: int, formatDate: int, keepUpToDate: bool):
-        """
-        Calls the underlying EClient.reqHistoricalData method to get historical
-        candle data.
-
-        Args:
-            reqId: The unique identifier for this historical data request.
-            contract: The Contract to get data for.
-            endDateTime: The end time of the request.
-            durationStr: The duration of the request (e.g., '1 D', '3600 S').
-            barSizeSetting: The size of the bars (e.g., '1 min', '5 mins').
-            whatToShow: The type of data (e.g., 'TRADES', 'MIDPOINT').
-            useRTH: Whether to use regular trading hours.
-            formatDate: The format of the returned date.
-            keepUpToDate: If False, provides a static data set.
-        """
-        pass
-
-    # --- News Subscription and Providers ---
+    def _execute_req_historical_data(self, reqId: int, contract: Contract, durationStr: str, barSizeSetting: str, whatToShow: str, useRTH: int, formatDate: int, keepUpToDate: bool, endDateTime: str = ''):
+        """Calls the underlying EClient.reqHistoricalData method."""
+        self.reqHistoricalData(reqId, contract, endDateTime, durationStr, barSizeSetting, whatToShow, useRTH, formatDate, keepUpToDate, [])
 
     def _execute_subscribe_news_feed(self, reqId: int, contract: Contract):
-        """
-        Subscribes to a real-time broadtape news feed.
-
-        This method is a specialized use of the EClient.reqMktData call,
-        using a Contract with secType='NEWS'. This is the primary method for
-        getting our real-time news stream.
-
-        Args:
-            reqId: The unique identifier for this news subscription request.
-            contract: A pre-constructed Contract with secType='NEWS' and the
-                      correct exchange and symbol for the news provider.
-        """
-        # Internally, this will just call the standard reqMktData.
-        # self.reqMktData(reqId, contract, "292", False, False)
-        pass
+        """Subscribes to a real-time broadtape news feed."""
+        # This is a specialized use of reqMktData.
+        # "292" is the generic tick type for broadtape news.
+        self.reqMktData(reqId, contract, "292", False, False, [])
 
     def _execute_unsubscribe_news_feed(self, reqId: int):
-        """
-        Unsubscribes from a real-time news feed.
-        
-        This is an alias for cancelMktData, used for clarity.
-
-        Args:
-            reqId: The unique identifier of the original news subscription request.
-        """
-        # Internally, this will just call cancelMktData.
-        # self.cancelMktData(reqId)
-        pass
+        """Unsubscribes from a real-time news feed."""
+        # This is an alias for cancelMktData.
+        self.cancelMktData(reqId)
 
     def _execute_req_news_providers(self):
-        """
-        Calls the underlying EClient.reqNewsProviders() method.
-        
-        This is a utility call used once at startup or after a reconnect to
-        verify which news providers the account is permissioned for. The response
-        is sent to the EWrapper.newsProviders() callback.
-        """
-        pass
+        """Calls the underlying EClient.reqNewsProviders() method."""
+        self.reqNewsProviders()

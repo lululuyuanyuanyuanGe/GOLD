@@ -12,7 +12,8 @@ ensuring this class remains a simple, non-blocking data receiver.
 
 from ibapi.wrapper import EWrapper
 from ibapi.contract import Contract, ContractDetails
-from ibapi.order import Order, OrderState
+from ibapi.order import Order
+from ibapi.order_state import OrderState
 from ibapi.ticktype import TickTypeEnum
 from ibapi.commission_report import CommissionReport
 import queue
@@ -33,7 +34,7 @@ class IBWrapper(EWrapper):
                                      All callback methods will put their
                                      data into this queue.
         """
-        EWrapper.__init__(self)
+        super().__init__()
         self.incoming_queue = incoming_messages_queue
 
     def _enqueue_message(self, msg_type: str, data: dict):
@@ -56,31 +57,32 @@ class IBWrapper(EWrapper):
 
     def connectAck(self):
         """EWrapper method called upon successful connection."""
+        logging.info("IBKR API connection acknowledged.")
         self._enqueue_message('CONNECTION_ACK', {})
 
     def connectionClosed(self):
         """EWrapper method called when the connection is closed."""
+        logging.warning("IBKR API connection closed.")
         self._enqueue_message('CONNECTION_CLOSED', {})
 
     # --- News Callback Methods ---
 
-    def newsProviders(self, newsProviders):
+    def newsProviders(self, newsProviders: list):
         """EWrapper method that returns the list of available news providers."""
-        # The newsProviders object needs to be converted to a serializable format (e.g., list of dicts)
         providers_data = [{'code': p.code, 'name': p.name} for p in newsProviders]
+        # This callback needs a reqId to be resolved, but the method doesn't provide one.
+        # We will assume a conventional reqId (e.g., -1) or handle it in the bridge.
+        # For now, we package it without a specific reqId.
         self._enqueue_message('NEWS_PROVIDERS', {'providers': providers_data})
 
     def tickString(self, reqId: int, tickType: int, value: str):
         """E-Wrapper method for tick types that return a string. This includes real-time news headlines."""
-        # We assume tickType 32 (RT_NEWS_ALERT) or similar, but will pass it along
-        if tickType in [TickTypeEnum.RT_NEWS_ALERT]: # Example, might need more tick types
+        # TickType 47 is RT_NEWS_ALERT
+        if tickType == 47:
              self._enqueue_message('NEWS_TICK', {
                 'reqId': reqId,
                 'article': value
             })
-        else:
-            # Handle other string ticks if necessary, or ignore
-            pass
 
     # --- Order and Position Callback Methods ---
 
@@ -141,7 +143,7 @@ class IBWrapper(EWrapper):
         """EWrapper method called with real-time price updates for a subscription."""
         self._enqueue_message('TICK_PRICE', {
             'reqId': reqId,
-            'tickType': TickTypeEnum.idx2name[tickType], # Convert index to readable name
+            'tickType': TickTypeEnum.idx2name.get(tickType, tickType),
             'price': price
         })
     
@@ -149,7 +151,7 @@ class IBWrapper(EWrapper):
         """EWrapper method called with real-time size updates (e.g., volume)."""
         self._enqueue_message('TICK_SIZE', {
             'reqId': reqId,
-            'tickType': TickTypeEnum.idx2name[tickType], # Convert index to readable name
+            'tickType': TickTypeEnum.idx2name.get(tickType, tickType),
             'size': size
         })
 
