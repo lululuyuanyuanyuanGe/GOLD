@@ -25,6 +25,9 @@ class IBWrapper(EWrapper):
     single, thread-safe queue for consumption by the main asyncio application.
     """
 
+    # Fixed request ids for infrequently api calls
+    REQ_ID_NEWS_PROVIDERS = -101
+
     def __init__(self, incoming_messages_queue: queue.Queue):
         """
         Initializes the EWrapper.
@@ -71,11 +74,14 @@ class IBWrapper(EWrapper):
 
     def newsProviders(self, newsProviders: list):
         """EWrapper method that returns the list of available news providers."""
+        logging.info("WRAPPER: Received news providers list.")
         providers_data = [{'code': p.code, 'name': p.name} for p in newsProviders]
-        # This callback needs a reqId to be resolved, but the method doesn't provide one.
-        # We will assume a conventional reqId (e.g., -1) or handle it in the bridge.
-        # For now, we package it without a specific reqId.
-        self._enqueue_message('NEWS_PROVIDERS', {'providers': providers_data})
+        
+        # Add our fixed reqId to the message payload
+        self._enqueue_message('NEWS_PROVIDERS', {
+            'reqId': self.REQ_ID_NEWS_PROVIDERS, 
+            'providers': providers_data
+        })
 
     def tickString(self, reqId: int, tickType: int, value: str):
         """E-Wrapper method for tick types that return a string. This includes real-time news headlines."""

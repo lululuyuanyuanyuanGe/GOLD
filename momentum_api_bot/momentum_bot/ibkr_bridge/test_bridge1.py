@@ -56,8 +56,6 @@ class TestIBKRBridge(unittest.IsolatedAsyncioTestCase):
         """
         logging.info("--- Running test_02_subscribe_to_news ---")
         
-        # Set the callback on the bridge
-        self.bridge.news_handler_callback = self._news_handler_callback
 
         await self.bridge.connect()
         self.assertEqual(self.bridge.state, "OPERATIONAL")

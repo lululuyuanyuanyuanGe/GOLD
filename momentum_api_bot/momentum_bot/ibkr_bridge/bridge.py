@@ -38,6 +38,9 @@ class IBKRBridge:
     The main bridge between the asynchronous application logic and the
     synchronous, threaded IBKR API client.
     """
+    
+    # Fixed request ids for infrequently api calls
+    REQ_ID_NEWS_PROVIDERS = -101
 
     def __init__(self, host: str, port: int, client_id: int):
         self.state = "DISCONNECTED"
@@ -53,6 +56,7 @@ class IBKRBridge:
         
         self.api_thread = None
         self.dispatcher_task = None
+        self.connection_established_event = asyncio.Event()
         self._pending_requests = {}
         
         self._next_req_id = 0
@@ -69,21 +73,22 @@ class IBKRBridge:
 
         logging.info(f"Connecting to IBKR at {self.host}:{self.port}...")
         self.state = "CONNECTING"
+
+        self.connection_established_event.clear()
+
         self._start_api_thread()
         
-        connection_future = asyncio.get_running_loop().create_future()
-        self._pending_requests['connection'] = RequestContext(reqId=-1, future=connection_future, request_type='CONNECTION')
-
         self.dispatcher_task = asyncio.create_task(self._dispatch_incoming_messages())
 
         try:
-            await asyncio.wait_for(connection_future, timeout=10)
+            # Wait for the event to be set by the dispatcher, with a timeout.
+            await asyncio.wait_for(self.connection_established_event.wait(), timeout=10)
             self.state = "OPERATIONAL"
             logging.info("IBKR Bridge is now OPERATIONAL.")
         except asyncio.TimeoutError:
             logging.error("Connection to IBKR timed out. Failed to receive nextValidId.")
             await self.disconnect()
-            self.state = "DISCONNECTED"
+            # self.state is already set to DISCONNECTED by disconnect()
             raise ConnectionError("IBKR connection timed out.")
 
     async def disconnect(self):
@@ -105,10 +110,21 @@ class IBKRBridge:
         logging.info("IBKR Bridge disconnected.")
 
     async def request_news_providers(self) -> list:
+        """
+        Requests the list of news providers the account is permissioned for.
+        """
         logging.info("Requesting news providers...")
-        # This request type's callback doesn't have a reqId, so we handle it specially
-        future = await self._send_request('REQ_NEWS_PROVIDERS', use_req_id=False)
-        self.client.reqNewsProviders() # Make the direct API call
+        
+        req_id = self.REQ_ID_NEWS_PROVIDERS # Use our fixed, conventional ID
+        future = asyncio.get_running_loop().create_future()
+        
+        # Register the future with our fixed ID
+        self._pending_requests[req_id] = RequestContext(reqId=req_id, future=future, request_type='REQ_NEWS_PROVIDERS')
+        
+        # Make the direct API call
+        self.client.reqNewsProviders() 
+        
+        # Wait for the future to be resolved by the dispatcher
         response = await future
         return response.get('data', {}).get('providers', [])
 
@@ -205,11 +221,21 @@ class IBKRBridge:
                 context.future.set_result(result)
             self._pending_requests.pop(reqId, None)
 
-        elif message['type'] == 'ERROR' and not context.future.done():
-            context.future.set_exception(RuntimeError(message['data']['message']))
-            self._pending_requests.pop(reqId, None)
-
-        else:
+        elif message["type"] == 'ERROR':
+            code = message.get('data', {}).get('code')
+            # Only treat non-informational messages as fatal errors for a request.
+            # Informational codes are in the 2100-2200 range, plus a few others.
+            if not (2100 <= code <= 2200 or code == 2158): 
+                if not context.future.done():
+                    error_msg = f"API Error Code {code}: {message.get('data', {}).get('message')}"
+                    context.future.set_exception(RuntimeError(error_msg))
+                self._pending_requests.pop(reqId, None)
+                
+            else:
+                # This is just an informational message, log it and ignore it.
+                logging.info(f"IBKR Info for reqId {reqId}: Code {code}, Message: {message.get('data', {}).get('message')}")
+                
+        else: # For simple, single-response messages
             if not context.future.done():
                 context.future.set_result(message)
                 self._pending_requests.pop(reqId, None)
@@ -222,13 +248,22 @@ class IBKRBridge:
     def _handle_system_message(self, message: dict):
         if message['type'] == 'NEXT_VALID_ID':
             self._set_initial_order_id(message['data']['orderId'])
-            if 'connection' in self._pending_requests:
-                context = self._pending_requests.pop('connection')
-                if not context.future.done():
-                    context.future.set_result(True)
+            
+            # Signal that the connection handshake is complete.
+            # This will unblock the await in the connect() method.
+            self.connection_established_event.set()
         
         elif message['type'] == 'ERROR':
-            logging.error(f"IBKR Error. Request ID: {message['data']['reqId']}, Code: {message['data']['code']}, Message: {message['data']['message']}")
+            # --- THIS IS THE FIX ---
+            code = message.get('data', {}).get('code')
+            message_text = message.get('data', {}).get('message')
+            reqId = message.get('data', {}).get('reqId')
+
+            # Differentiate between logging level based on code
+            if 2100 <= code <= 2200 or code == 2158:
+                logging.info(f"IBKR Info: Code {code}, Message: '{message_text}'")
+            else:
+                logging.error(f"IBKR Error: reqId {reqId}, Code {code}, Message: '{message_text}'")
 
     async def _send_request(self, request_type: str, use_req_id: bool = True, **kwargs) -> asyncio.Future:
         req_id = self._get_next_req_id() if use_req_id else -1

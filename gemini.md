@@ -91,6 +91,8 @@ Refer to `development_progress.md` for a detailed summary of completed work and 
 *   Refined `PositionManager` P&L Calculation.
 *   Resolved various runtime errors (`ModuleNotFoundError`, `sqlalchemy.exc.OperationalError`, `AttributeError`s).
 
+## 7. Conventions and rules in this project (from development_log.md)
+
 ### Next Steps:
 
 *   **Testing and Validation:** Implement comprehensive unit and integration tests for all modules.
