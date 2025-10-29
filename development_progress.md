@@ -65,3 +65,9 @@
 *   **`IBKRBridge` Code Review:**
     *   Conducted a detailed review of the `ibkr_bridge` module, including `bridge.py`, `client.py`, and `wrapper.py`.
     *   The review confirms that the implementation correctly establishes a threaded, queue-based communication layer between the main `asyncio` application and the synchronous `ibapi` library, as per the architectural design.
+
+*   **`IBKRBridge` Architectural Refactoring:**
+    *   Significantly simplified the bridge design by removing the `outgoing_queue` and the custom `run_loop` in the `IBClient`.
+    *   The bridge now uses the standard, blocking `EClient.run()` method in a dedicated thread, which is the official recommended approach for the `ibapi` library.
+    *   API requests are now made via direct, thread-safe calls to `EClient` methods from the main `asyncio` application, removing a layer of complexity and potential errors.
+    *   This new architecture is more robust, easier to understand, and less prone to threading issues.

@@ -36,14 +36,13 @@ The system is modular, with distinct components for connection management, news 
 
 ## 4. System Architecture & Data Flow (from tss.md)
 
-The application operates as a single, long-running asynchronous process. Communication flows through a central `IBKRBridge`, with news processing decoupled via an `asyncio.Queue`.
+The application operates as a single, long-running asynchronous process. Communication flows through a central `IBKRBridge`, which manages a dedicated thread for the official `ibapi` library. An `asyncio.Queue` is used to pass incoming messages from the API thread to the main application thread.
 
 ```
-IBKR API <--> [IBKR Bridge] <--> [News Handler (Producer)] -> [Asyncio Queue]
-    ^                   |                                              |
-    | (Data Req/Resp)   | (Order Flow)                                 v
-    |                   v                                              |
-    `[Execution Svc]` <- `[Worker Pool (Consumers)]` -> `[Position Mgr]`
+IBKR API <--> [IBKR Bridge] -> (Incoming Queue) -> [Asyncio Services]
+    ^              |
+    |              `-(Direct API Calls)---- [Asyncio Services]
+    `-(Market Data, Order Status, etc.)
 ```
 
 ## 5. Building and Running

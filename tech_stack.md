@@ -33,9 +33,8 @@ The architecture is now a hybrid model with a clear boundary between the synchro
 
 | **Synchronous API Thread** | **The Bridge** | **Asynchronous Main Thread (Event Loop)** |
 | :--- | :--- | :--- |
-| `IBKR Wrapper (EWrapper)` -> | `Thread-Safe Incoming Queue` -> | `[News Handler]` -> `[Asyncio Queue]` |
-| `IBKR Client (EClient)` <- | `Thread-Safe Outgoing Queue` <- | `[Worker Pool]` -> `[Execution Svc]` |
-| | | `[Position Manager]` |
+| `IBKR Wrapper (EWrapper)` -> | `Thread-Safe Incoming Queue` -> | `[Dispatcher Task]` -> `(Resolves Futures)` |
+| `IBKR Client (EClient)` <- | *(Direct API Calls)* <- | `[Services: News, Detection, etc.]` |
 
 **4. Detailed Component Breakdown**
 
@@ -48,33 +47,32 @@ The architecture is now a hybrid model with a clear boundary between the synchro
             *   The *sole job* of these callback methods is to take the incoming data, wrap it in a simple data object, and put it onto a standard, thread-safe `queue.Queue` (the "Incoming Queue").
         *   **The Client (`IBClient`):**
             *   It will subclass `EClient`.
-            *   The `IBKRBridge` will have a `run()` method that starts the client's internal event loop in a **separate `threading.Thread`**.
+            *   The `IBKRBridge` will start the client's standard, blocking `run()` method in a **separate `threading.Thread`**. This loop handles all low-level socket communication.
         *   **Thread Management:** The bridge is responsible for starting, monitoring, and gracefully shutting down this API thread.
-        *   **Request Handling:** It will run a loop that pulls request objects from an "Outgoing Queue" and calls the appropriate `EClient` methods (e.g., `placeOrder`, `reqMktData`).
+        *   **Request Handling:** Asynchronous methods in the bridge (e.g., `fetch_historical_data`) now make direct, thread-safe calls to the `IBClient` instance (e.g., `self.client.reqHistoricalData(...)`). The bridge uses `asyncio.Future` objects to await the corresponding response from the `incoming_queue`.
 
 *   **`Main Orchestrator` (`main.py`)**
     *   **Responsibility:** Initializes the `asyncio` event loop and all application modules.
     *   **Implementation Details:**
-        *   It will instantiate the `IBKRBridge` and start its thread.
-        *   It will create the `asyncio.Queue` for the producer-consumer pattern.
-        *   It will create and run the main consumer task that bridges the gap between the sync and async worlds. This task's job is to pull items from the `IBKRBridge`'s "Incoming Queue" and route them to the correct async handlers.
+        *   It will instantiate the `IBKRBridge` and start it.
+        *   It creates and runs the primary services (NewsHandler, DetectionEngine, etc.).
+        *   The `IBKRBridge` internally runs a dispatcher task that bridges the gap between the sync and async worlds. This task's job is to pull items from the `IBKRBridge`'s "Incoming Queue" and route them to the correct async handlers or resolve pending `Future` objects.
 
 *   **`NewsHandler` (Now a Consumer)**
     *   **Responsibility:** Processes news objects received from the `IBKRBridge`.
     *   **Implementation Details:**
-        *   It no longer subscribes directly.
-        *   The main orchestrator will pass news objects (pulled from the Incoming Queue) to this handler.
+        *   The main orchestrator will pass news objects (delivered via the `news_handler_callback` in the bridge) to this handler.
         *   Upon receiving a news object, it parses the XML and puts the ticker into the internal `asyncio.Queue` for the worker pool.
 
 *   **`DetectionEngine` (Consumer Worker Pool)**
     *   **Responsibility:** Unchanged. Consumes tickers from the internal `asyncio.Queue`.
     *   **Implementation Details:**
-        *   When it needs market data, it will **not** call an API directly. Instead, it will create a "request" object (e.g., `{'type': 'FETCH_CANDLES', 'ticker': 'AAPL'}`) and put it onto the "Outgoing Queue" for the `IBKRBridge` to handle. It will then have to `await` a response, likely via a future/event mechanism.
+        *   When it needs market data, it will now call the appropriate asynchronous method on the `IBKRBridge` instance (e.g., `await bridge.fetch_historical_data(...)`), which handles making the direct API call and returning the result.
 
 *   **`ExecutionService`**
     *   **Responsibility:** Manages the logic for entering a trade.
     *   **Implementation Details:**
-        *   Instead of calling `ib.place_order()`, it will construct an `Order` object and a `Contract`, wrap them in a request dictionary (e.g., `{'type': 'PLACE_ORDER', 'order': ..., 'contract': ...}`), and put it onto the "Outgoing Queue".
+        *   It will call the appropriate method on the `IBKRBridge` instance (e.g., `bridge.place_order(...)`), passing the `Contract` and `Order` objects directly.
 
 **5. Project Directory Structure**
 
