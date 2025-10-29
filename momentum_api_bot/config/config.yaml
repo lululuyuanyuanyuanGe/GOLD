@@ -2,7 +2,7 @@
 
 ibkr:
   host: 127.0.0.1
-  port: 7497
+  port: 4002
   client_id: 1
 
 detection_engine:
@@ -15,4 +15,4 @@ database:
   url: sqlite:///../data/trades.db
 
 news:
-  providers: ['BENZINGA'] # Example: Add other providers as needed
+  providers: ['BZ'] # Example: Add other providers as needed

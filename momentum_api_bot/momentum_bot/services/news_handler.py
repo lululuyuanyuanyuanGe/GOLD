@@ -2,49 +2,63 @@ import asyncio
 import logging
 import xml.etree.ElementTree as ET
 from momentum_bot.utils import parse_ibkr_news_xml
-from momentum_bot.ibkr_connector import IBKRConnector
+from ibapi.contract import Contract
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 class NewsHandler:
-    def __init__(self, ibkr_connector: IBKRConnector, news_queue: asyncio.Queue):
-        self.ibkr_connector = ibkr_connector
-        self.news_queue = news_queue
-        # Remove the debug print statement
-        # print(dir(self.ibkr_connector.ib))
-        self.ibkr_connector.ib.tickNewsEvent += self._on_tick_news_event
-        logging.info("NewsHandler initialized and subscribed to IBKR newsArticleEvent.")
-
-    async def _on_tick_news_event(self, tickerId, timeStamp, providerCode, articleId, headline, hasMore):
-        """Callback for incoming news ticks."""
-        logging.info(f"NewsHandler: Received news tick: {headline} (Provider: {providerCode}, Article ID: {articleId})")
-
-        if not articleId:
-            logging.warning("NewsHandler: Received news tick without article ID. Skipping.")
-            return
-
-        try:
-            # Fetch the full news article
-            article = await self.ibkr_connector.ib.reqNewsArticleAsync(providerCode, articleId)
-            if article and article.articleText:
-                # Assuming the articleText is XML content
-                tickers = parse_ibkr_news_xml(article.articleText)
-
-                if tickers:
-                    for ticker in tickers:
-                        logging.info(f"NewsHandler: Detected ticker {ticker} from news article. Adding to queue.")
-                        await self.news_queue.put(ticker)
-                else:
-                    logging.info("NewsHandler: No tickers found in news article.")
-            else:
-                logging.warning(f"NewsHandler: Could not fetch full article for ID {articleId} or article text is empty.")
-
-        except Exception as e:
-            logging.error(f"NewsHandler: An unexpected error occurred during news article fetching/processing: {e}", exc_info=True)
+    def __init__(self, news_processing_queue: asyncio.Queue):
+        self.news_processing_queue = news_processing_queue
+        self.processed_news_queue = asyncio.Queue() # To pass processed tickers to DetectionEngine
+        logging.info("NewsHandler initialized.")
 
     async def start(self):
-        """Starts the news handler, which primarily listens via the IBKRConnector's event system."""
+        """Starts the news handler, which primarily listens via the news_processing_queue."""
         logging.info("NewsHandler started. Waiting for news articles...")
-        # The actual subscription to news topics will happen via IBKRConnector's subscribe_to_news method
-        # which will be called from main.py or a higher-level orchestrator.
+        asyncio.create_task(self._process_news_articles())
+
+    async def _process_news_articles(self):
+        while True:
+            try:
+                message = await self.news_processing_queue.get()
+                message_type = message.get("type")
+
+                if message_type == "newsArticle":
+                    req_id = message.get("reqId")
+                    article_type = message.get("data", {}).get("articleType")
+                    article_text = message.get("data", {}).get("articleText")
+                    headline = message.get("data", {}).get("headline")
+                    extra_data = message.get("data", {}).get("extraData")
+
+                    logging.info(f"NewsHandler: Processing news article (ReqId: {req_id}, Headline: {headline})")
+
+                    if not article_text:
+                        logging.warning(f"NewsHandler: Received news article without text for ReqId {req_id}. Skipping.")
+                        continue
+
+                    try:
+                        tickers = parse_ibkr_news_xml(article_text)
+                        if tickers:
+                            for ticker in tickers:
+                                logging.info(f"NewsHandler: Detected ticker {ticker} from news article. Adding to processed queue.")
+                                await self.processed_news_queue.put(ticker)
+                        else:
+                            logging.info(f"NewsHandler: No tickers found in news article for ReqId {req_id}.")
+                    except Exception as e:
+                        logging.error(f"NewsHandler: Error parsing news XML for ReqId {req_id}: {e}", exc_info=True)
+                else:
+                    logging.warning(f"NewsHandler: Received unexpected message type: {message_type}")
+
+                self.news_processing_queue.task_done()
+            except asyncio.CancelledError:
+                logging.info("NewsHandler _process_news_articles task cancelled.")
+                break
+            except Exception as e:
+                logging.error(f"NewsHandler: An unexpected error occurred in _process_news_articles: {e}", exc_info=True)
+
+    async def get_processed_news(self):
+        return await self.processed_news_queue.get()
+
+    def get_processed_news_queue(self):
+        return self.processed_news_queue
 

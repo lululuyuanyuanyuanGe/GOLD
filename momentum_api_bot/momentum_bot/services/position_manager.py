@@ -1,9 +1,9 @@
 import asyncio
 import logging
-from momentum_bot.ibkr_connector import IBKRConnector
 from momentum_bot.models import Position, TradeSignal
 from momentum_bot.services.execution_service import ExecutionService
 from momentum_bot.database import PositionRecord, Trade
+from ibapi.contract import Contract
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy import select
 import datetime
@@ -11,8 +11,8 @@ import datetime
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 class PositionManager:
-    def __init__(self, ibkr_connector: IBKRConnector, execution_service: ExecutionService, Session: sessionmaker):
-        self.ibkr_connector = ibkr_connector
+    def __init__(self, ibkr_bridge, execution_service: ExecutionService, Session: sessionmaker):
+        self.ibkr_bridge = ibkr_bridge
         self.execution_service = execution_service
         self.Session = Session
         self.open_positions = {} # Dictionary to store open positions: {symbol: PositionRecord}
@@ -34,8 +34,8 @@ class PositionManager:
         while True:
             try:
                 await asyncio.sleep(interval)
-                if not self.ibkr_connector.is_operational():
-                    logging.warning("PositionManager: IBKR connector not operational. Skipping position monitoring.")
+                if not self.ibkr_bridge.is_connected():
+                    logging.warning("PositionManager: IBKR bridge not operational. Skipping position monitoring.")
                     continue
 
                 logging.info("PositionManager: Monitoring open positions...")
@@ -45,14 +45,38 @@ class PositionManager:
                     logging.info(f"PositionManager: Checking position for {symbol}: {position_record}")
                     
                     # Fetch real-time market data for the open position
-                    contract = Contract(symbol=symbol, secType='STK', exchange='SMART', currency='USD')
-                    realtime_ticker = await self.ibkr_connector.stream_quotes(contract)
+                    contract = Contract()
+                    contract.symbol = symbol
+                    contract.secType = 'STK'
+                    contract.exchange = 'SMART'
+                    contract.currency = 'USD'
 
-                    if not realtime_ticker or realtime_ticker.last != realtime_ticker.last: # Check for NaN
+                    market_data_req_id = self.ibkr_bridge.request_market_data(contract, snapshot=True) # Request a snapshot
+                    logging.info(f"PositionManager: Requested market data snapshot for {symbol} with ReqId: {market_data_req_id}")
+
+                    current_price = None
+                    # Wait for tickPrice response
+                    while True:
+                        message = await asyncio.to_thread(self.ibkr_bridge.get_incoming_queue().get)
+                        if message.get("type") == "tickPrice" and message.get("reqId") == market_data_req_id:
+                            # TickType 4 is last price
+                            if message["data"]["tickType"] == 4:
+                                current_price = message["data"]["price"]
+                                self.ibkr_bridge.get_incoming_queue().task_done()
+                                break
+                        elif message.get("type") == "tickSnapshotEnd" and message.get("reqId") == market_data_req_id:
+                            self.ibkr_bridge.get_incoming_queue().task_done()
+                            break # Snapshot ended, no more ticks for this request
+                        elif message.get("type") == "error" and message.get("reqId") == market_data_req_id:
+                            logging.error(f"PositionManager: Error fetching market data for {symbol}: {message}")
+                            self.ibkr_bridge.get_incoming_queue().task_done()
+                            break
+                        self.ibkr_bridge.get_incoming_queue().task_done()
+
+                    if current_price is None:
                         logging.warning(f"PositionManager: Could not get real-time price for {symbol}. Skipping P&L calculation.")
                         continue
 
-                    current_price = realtime_ticker.last
                     pnl = (current_price - position_record.avg_entry_price) * position_record.quantity
                     logging.info(f"PositionManager: {symbol} Current Price: {current_price:.2f}, P&L: {pnl:.2f}")
 
@@ -65,7 +89,7 @@ class PositionManager:
                             entry_price=current_price,
                             timestamp=datetime.datetime.now().timestamp()
                         )
-                        await self.execution_service.execution_queue.put(exit_signal)
+                        await self.execution_service.execution_request_queue.put(exit_signal)
                         
                         with self.Session() as session:
                             # Update PositionRecord status
@@ -101,7 +125,7 @@ class PositionManager:
                             entry_price=current_price,
                             timestamp=datetime.datetime.now().timestamp()
                         )
-                        await self.execution_service.execution_queue.put(exit_signal)
+                        await self.execution_service.execution_request_queue.put(exit_signal)
                         
                         with self.Session() as session:
                             # Update PositionRecord status

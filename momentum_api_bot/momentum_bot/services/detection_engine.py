@@ -2,20 +2,20 @@ import asyncio
 import logging
 import pandas as pd
 import numpy as np
-from ib_insync import Contract
-from momentum_bot.ibkr_connector import IBKRConnector
+from ibapi.contract import Contract
 from momentum_bot.models import TradeSignal
 from momentum_bot.utils import calculate_atr, calculate_sma
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 class DetectionEngine:
-    def __init__(self, ibkr_connector: IBKRConnector, news_queue: asyncio.Queue, execution_queue: asyncio.Queue, num_workers: int = 5):
-        self.ibkr_connector = ibkr_connector
-        self.news_queue = news_queue
-        self.execution_queue = execution_queue
+    def __init__(self, ibkr_bridge, news_queue: asyncio.Queue, execution_request_queue: asyncio.Queue, num_workers: int = 5):
+        self.ibkr_bridge = ibkr_bridge
+        self.news_queue = news_queue # This is the processed_news_queue from NewsHandler
+        self.execution_request_queue = execution_request_queue # This is the queue for ExecutionService
         self.num_workers = num_workers
         self.workers = []
+        self.pending_requests = {}
         logging.info(f"DetectionEngine initialized with {num_workers} workers.")
 
     async def start(self):
@@ -32,16 +32,46 @@ class DetectionEngine:
                 ticker = await self.news_queue.get()
                 logging.info(f"DetectionEngine {worker_id}: Received ticker {ticker} from news queue.")
 
-                if not self.ibkr_connector.is_operational():
-                    logging.warning(f"DetectionEngine {worker_id}: IBKR connector not operational. Skipping {ticker}.")
+                if not self.ibkr_bridge.is_connected():
+                    logging.warning(f"DetectionEngine {worker_id}: IBKR bridge not connected. Skipping {ticker}.")
                     self.news_queue.task_done()
                     continue
 
                 # Fetch historical data for ATR/SMA calculation
                 logging.info(f"DetectionEngine {worker_id}: Fetching historical data for {ticker}.")
-                contract = Contract(symbol=ticker, secType='STK', exchange='SMART', currency='USD')
-                # Fetch enough data for ATR(10) and SMA(20) - e.g., 30 bars of 1 minute
-                bars = await self.ibkr_connector.fetch_candles(contract, durationStr='30 T', barSizeSetting='1 min')
+                contract = Contract()
+                contract.symbol = ticker
+                contract.secType = 'STK'
+                contract.exchange = 'SMART'
+                contract.currency = 'USD'
+
+                # Request historical data
+                hist_data_req_id = self.ibkr_bridge.request_historical_data(
+                    contract,
+                    endDateTime='',
+                    durationStr='30 T',
+                    barSizeSetting='1 min',
+                    whatToShow='TRADES',
+                    useRTH=1,
+                    formatDate=1
+                )
+                logging.info(f"DetectionEngine {worker_id}: Requested historical data for {ticker} with ReqId: {hist_data_req_id}")
+
+                bars = []
+                # Wait for historical data response
+                while True:
+                    message = await asyncio.to_thread(self.ibkr_bridge.get_incoming_queue().get)
+                    if message.get("type") == "historicalData" and message.get("reqId") == hist_data_req_id:
+                        bars.append(message["data"])
+                    elif message.get("type") == "historicalDataEnd" and message.get("reqId") == hist_data_req_id:
+                        self.ibkr_bridge.get_incoming_queue().task_done()
+                        break
+                    elif message.get("type") == "error" and message.get("reqId") == hist_data_req_id:
+                        logging.error(f"DetectionEngine {worker_id}: Error fetching historical data for {ticker}: {message}")
+                        self.ibkr_bridge.get_incoming_queue().task_done()
+                        bars = [] # Clear bars on error
+                        break
+                    self.ibkr_bridge.get_incoming_queue().task_done()
 
                 if not bars:
                     logging.warning(f"DetectionEngine {worker_id}: No historical data for {ticker}. Skipping shock detection.")
@@ -82,15 +112,40 @@ class DetectionEngine:
 
                 # Stream real-time quotes to get the most up-to-date price and volume
                 logging.info(f"DetectionEngine {worker_id}: Streaming real-time quotes for {ticker}.")
-                realtime_ticker = await self.ibkr_connector.stream_quotes(contract)
+                market_data_req_id = self.ibkr_bridge.request_market_data(contract, snapshot=True) # Request a snapshot
+                logging.info(f"DetectionEngine {worker_id}: Requested market data snapshot for {ticker} with ReqId: {market_data_req_id}")
 
-                if realtime_ticker and realtime_ticker.last != realtime_ticker.last: # Check for NaN
-                    current_close = realtime_ticker.last
-                    # IBKR real-time volume is cumulative, so we need to calculate volume for the current bar
-                    # This is a simplification; a more robust solution would track volume per minute.
-                    # For now, we'll just use the last historical bar's volume as a base and add a small simulated increment.
-                    current_volume = current_bar['volume'] + (realtime_ticker.volume if realtime_ticker.volume else 0)
-                    logging.info(f"DetectionEngine {worker_id}: Real-time update for {ticker}: Close={current_close}, Volume={current_volume}")
+                realtime_price = None
+                realtime_size = None
+                # Wait for tickPrice response
+                while True:
+                    message = await asyncio.to_thread(self.ibkr_bridge.get_incoming_queue().get)
+                    if message.get("type") == "tickPrice" and message.get("reqId") == market_data_req_id:
+                        # TickType 4 is last price
+                        if message["data"]["tickType"] == 4:
+                            realtime_price = message["data"]["price"]
+                        # TickType 5 is last size
+                        elif message["data"]["tickType"] == 5:
+                            realtime_size = message["data"]["size"]
+
+                        if realtime_price is not None and realtime_size is not None:
+                            self.ibkr_bridge.get_incoming_queue().task_done()
+                            break
+                    elif message.get("type") == "tickSnapshotEnd" and message.get("reqId") == market_data_req_id:
+                        self.ibkr_bridge.get_incoming_queue().task_done()
+                        break # Snapshot ended, no more ticks for this request
+                    elif message.get("type") == "error" and message.get("reqId") == market_data_req_id:
+                        logging.error(f"DetectionEngine {worker_id}: Error fetching market data for {ticker}: {message}")
+                        self.ibkr_bridge.get_incoming_queue().task_done()
+                        break
+                    self.ibkr_bridge.get_incoming_queue().task_done()
+
+                if realtime_price is not None:
+                    current_close = realtime_price
+                    # This is a simplification; real-time volume from snapshot is tricky.
+                    # For now, we'll just use the last historical bar's volume.
+                    # A more robust solution would involve continuous market data streaming.
+                    logging.info(f"DetectionEngine {worker_id}: Real-time update for {ticker}: Close={current_close}")
 
                 price_multiplier = 3.0 # From PRD
                 volume_multiplier = 5.0 # From PRD
@@ -114,8 +169,8 @@ class DetectionEngine:
                         entry_price=current_close, # Use current close as entry price
                         timestamp=current_bar.name.timestamp() # Use timestamp of the bar
                     )
-                    await self.execution_queue.put(trade_signal)
-                    logging.info(f"DetectionEngine {worker_id}: Put TradeSignal for {ticker} into execution queue.")
+                    await self.execution_request_queue.put(trade_signal)
+                    logging.info(f"DetectionEngine {worker_id}: Put TradeSignal for {ticker} into execution request queue.")
                 else:
                     logging.info(f"DetectionEngine {worker_id}: No shock detected for {ticker}.")
 

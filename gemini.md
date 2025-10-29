@@ -28,7 +28,7 @@ The system is modular, with distinct components for connection management, news 
 ## 3. Core Technology Stack (from tss.md)
 
 *   **Programming Language:** **Python 3.10+** (with `asyncio` for concurrency)
-*   **IBKR API Connectivity:** **ib_insync Library** (high-level, async-native interface)
+*   **IBKR API Connectivity:** **IBKR official ib gateway Library**
 *   **Data Analysis & Indicators:** **NumPy & Pandas** (for numerical operations and time-series data)
 *   **Data Persistence (Trade Records):** **SQLite** (serverless, file-based SQL database via SQLAlchemy)
 *   **Configuration:** **YAML (`PyYAML` library)** (for human-readable configuration)
