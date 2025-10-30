@@ -13,4 +13,4 @@ wheels/
 IBKR/.env
 .env
 
-__pycache__/
+.vscode/

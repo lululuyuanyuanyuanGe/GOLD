@@ -16,6 +16,8 @@
     *   *Justification:* This is the officially supported, low-level library from Interactive Brokers. It provides maximum control and stability and is proven to work for the free news feeds. It consists of the `EClient` and `EWrapper` classes.
 *   **Sync/Async Bridge:** **Python's `threading` and `queue` Libraries**
     *   *Justification:* These standard libraries are essential for managing the API thread and creating the thread-safe queue used to pass messages from the synchronous `EWrapper` callbacks to the main `asyncio` event loop.
+*   **Asynchronous HTTP:** **`aiohttp` Library**
+    *   *Justification:* Required for performing non-blocking HTTP requests to external services, such as the AI parsing API, ensuring the main event loop is never blocked by network I/O.
 *   **Data Analysis & Indicators:** **NumPy & Pandas**
     *   *Justification:* Unchanged. Still the best tools for numerical and time-series analysis.
 *   **Data Persistence (Trade Records):** **SQLite**

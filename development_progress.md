@@ -77,3 +77,9 @@
     *   This replaces the previous mix of direct callbacks and queues with a consistent "Queue as Interface" pattern.
     *   The `IBKRBridge` will now act as a producer, placing raw news data onto a dedicated `raw_news_queue`.
     *   The `NewsHandler` will act as a consumer, reading from this queue, ensuring non-blocking processing and clear separation of concerns.
+
+*   **Integrated AI-Based News Parsing:**
+    *   Replaced the brittle `parse_ibkr_news_xml` utility with a more robust, intelligent parsing strategy using an external AI API.
+    *   Created a new, dedicated service module at `momentum_bot/services/ai.py` to house the `extract_symbols_with_ai` function.
+    *   Refactored `NewsHandler` to manage an `aiohttp.ClientSession` and call the new AI service for symbol extraction, making the system capable of handling unstructured news text.
+    *   Added `aiohttp` to the project's core technology stack.
