@@ -16,3 +16,7 @@ database:
 
 news:
   providers: ['BZ'] # Example: Add other providers as needed
+
+llm_models:
+  deepseek: deepseek
+  
