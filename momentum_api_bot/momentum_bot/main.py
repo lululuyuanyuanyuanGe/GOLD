@@ -94,9 +94,9 @@ async def main():
 
     # 3. Start other services
     await news_handler.start()
-    await detection_engine.start()
-    await execution_service.start()
-    await position_manager.start(interval=config["position_manager"]["monitor_interval"])
+    # await detection_engine.start()
+    # await execution_service.start()
+    # await position_manager.start(interval=config["position_manager"]["monitor_interval"])
 
     logging.info("Momentum API Bot services started. Press Ctrl+C to stop.")
 

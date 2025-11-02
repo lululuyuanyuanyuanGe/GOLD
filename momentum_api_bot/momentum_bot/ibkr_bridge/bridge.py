@@ -142,9 +142,13 @@ class IBKRBridge:
         req_id = self._get_next_req_id()
         contract = Contract()
         contract.secType = "NEWS"
-        contract.exchange = provider_code
+        # The provider code (e.g., 'BZ' for Benzinga) goes in the SYMBOL field
+        contract.symbol = provider_code
+        # The exchange for news is typically BRF, but it's often better to leave it empty
+        # and let the symbol direct the request.
+        contract.exchange = ""
         
-        self.client.reqMktData(req_id, contract, "292", False, False, [])
+        self.client.reqMktData(req_id, contract, "mdoff,292", False, False, [])
         logging.info(f"Sent subscription request for news provider: {provider_code} with reqId {req_id}")
 
     async def fetch_historical_data(self, contract: Contract, duration: str, bar_size: str) -> list:
