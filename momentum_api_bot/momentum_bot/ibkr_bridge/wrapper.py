@@ -104,12 +104,22 @@ class IBWrapper(EWrapper):
 
     def tickString(self, reqId: int, tickType: int, value: str):
         """E-Wrapper method for tick types that return a string. This includes real-time news headlines."""
-        # TickType 47 is RT_NEWS_ALERT
-        if tickType == 47:
-             self._enqueue_message('NEWS_TICK', {
-                'reqId': reqId,
-                'article': value
-            })
+        pass
+
+    def newsArticle(self, tickerId: int, articleType: int, articleText: str):
+        # Callback for receiving the full news article body
+        print(f"News Article: TickerId={tickerId}, Type={articleType}, Text='{articleText[:200]}...'") # Print first 200 chars
+
+    def tickNews(self, tickerId: int, timeStamp: int, providerCode: str, articleId: str, headline: str, extraData: str):
+        """EWrapper method for when news headlines are received."""
+        logging.info(f"tickNews: {headline}")
+        self._enqueue_message('NEWS_TICK', {
+            'reqId': tickerId,
+            'providerCode': providerCode,
+            'articleId': articleId,
+            'article': headline, # map headline to article for NewsHandler
+            'extraData': extraData
+        })
 
     # --- Order and Position Callback Methods ---
 

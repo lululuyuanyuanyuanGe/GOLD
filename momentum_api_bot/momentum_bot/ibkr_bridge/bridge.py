@@ -19,7 +19,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import Optional, Callable, Coroutine, Any, List
 
-from .client import IBClient
+from ibapi.client import EClient
 from .wrapper import IBWrapper
 from ibapi.contract import Contract
 from ibapi.order import Order
@@ -51,7 +51,7 @@ class IBKRBridge:
         
         self.incoming_queue = queue.Queue()
         self.wrapper = IBWrapper(self.incoming_queue)
-        self.client = IBClient(self.wrapper)
+        self.client = EClient(self.wrapper)
         
         self.api_thread = None
         self.dispatcher_task = None
@@ -141,15 +141,16 @@ class IBKRBridge:
     async def subscribe_to_news_feed(self, provider_code: str):
         req_id = self._get_next_req_id()
         contract = Contract()
-        contract.secType = "NEWS"
-        # The provider code (e.g., 'BZ' for Benzinga) goes in the SYMBOL field
-        contract.symbol = provider_code
-        # The exchange for news is typically BRF, but it's often better to leave it empty
-        # and let the symbol direct the request.
-        contract.exchange = ""
         
-        self.client.reqMktData(req_id, contract, "mdoff,292", False, False, [])
+        # For BroadTape news, use the provider:feed format
+        contract.symbol = f"{provider_code}:{provider_code}_ALL"  # "BZ:BZ_ALL"
+        contract.secType = "NEWS"
+        contract.exchange = provider_code  # "BZ" (not empty!)
+        
+        # Don't use "mdoff,292" for news feeds
+        self.client.reqMktData(req_id, contract, "", False, False, [])
         logging.info(f"Sent subscription request for news provider: {provider_code} with reqId {req_id}")
+
 
     async def fetch_historical_data(self, contract: Contract, duration: str, bar_size: str) -> list:
         logging.info(f"Requesting historical data for {contract.symbol}...")
