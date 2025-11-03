@@ -2,7 +2,7 @@
 
 ibkr:
   host: 127.0.0.1
-  port: 4002
+  port: 4001
   client_id: 1
 
 detection_engine:

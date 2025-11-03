@@ -147,8 +147,8 @@ class IBKRBridge:
         contract.secType = "NEWS"
         contract.exchange = provider_code  # "BZ" (not empty!)
         
-        # Don't use "mdoff,292" for news feeds
-        self.client.reqMktData(req_id, contract, "", False, False, [])
+        # Use generic tick type 292 for news headlines
+        self.client.reqMktData(req_id, contract, "292", False, False, [])
         logging.info(f"Sent subscription request for news provider: {provider_code} with reqId {req_id}")
 
 

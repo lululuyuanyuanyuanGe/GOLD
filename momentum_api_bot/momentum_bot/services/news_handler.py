@@ -52,6 +52,7 @@ class NewsHandler:
                     continue
 
                 logging.info(f"NewsHandler: Processing news article (ReqId: {req_id}) with AI...")
+                logging.info(f"The news ariticle content: {article_text}")
 
                 try:
                     # Replace the old parser with the new AI-based one
