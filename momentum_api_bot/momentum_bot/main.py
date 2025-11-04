@@ -24,7 +24,7 @@ async def main():
     config = {
         "ibkr": {
             "host": "127.0.0.1",
-            "port": 4001,
+            "port": 7496,
             "client_id": 1
         },
         "detection_engine": {
