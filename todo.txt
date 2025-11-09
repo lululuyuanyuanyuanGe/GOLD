@@ -7,3 +7,5 @@ gold wrapper is probably dead :<
 resume
 
 multi chat interface
+
+figured out transformer already
